@@ -6,7 +6,7 @@ import { InputManager } from "./InputManager.js";
 import { HUD } from "./HUD.js";
 import { Skybox } from "./Skybox.js";
 import { LensFlare } from "./LensFlare.js";
-import { Water } from "./Water.js";
+import { ReflectiveWater } from "./ReflectiveWater.js";
 
 export class Game {
   constructor() {
@@ -53,15 +53,14 @@ export class Game {
     this.lensFlare = new LensFlare(this.scene, this.camera, this.renderer);
     console.log("✨ Lens flare system initialized");
 
-    // Create water system after lighting
-    this.water = new Water(
-      this.scene,
-      this.renderer,
-      this.camera,
-      this.sunLight
-    );
-    this.water.setStormyWater(); // Start with calm water
-    console.log("🌊 Water system initialized");
+    // Create reflective water system after lighting
+    this.water = new ReflectiveWater(this.scene, this.renderer, this.camera);
+    // Water will initialize async including loading normal map
+    this.water.init().then(() => {
+      if (this.water.setClearWater) {
+        this.water.setClearWater(); // Start with clear water
+      }
+    });
 
     // Don't create input manager until game starts
 
@@ -242,21 +241,15 @@ export class Game {
     };
 
     // Add water debug functions
-    window.setWaterCalm = () => {
+    window.setWaterClear = () => {
       if (this.water) {
-        this.water.setCalmWater();
+        this.water.setClearWater();
       }
     };
 
-    window.setWaterRough = () => {
+    window.setWaterDeep = () => {
       if (this.water) {
-        this.water.setRoughSea();
-      }
-    };
-
-    window.setWaterStormy = () => {
-      if (this.water) {
-        this.water.setStormyWater();
+        this.water.setDeepWater();
       }
     };
 
@@ -274,6 +267,7 @@ export class Game {
         );
       }
     };
+
 
     this.animate();
   }
@@ -327,8 +321,8 @@ export class Game {
       }
 
       // Update water in menu phase too
-      if (this.water && this.sunLight) {
-        this.water.update(deltaTime, this.camera, this.sunLight);
+      if (this.water) {
+        this.water.update(deltaTime, this.camera);
       }
 
       return;
@@ -352,8 +346,8 @@ export class Game {
     }
 
     // Update water
-    if (this.water && this.sunLight) {
-      this.water.update(deltaTime, this.camera, this.sunLight);
+    if (this.water) {
+      this.water.update(deltaTime, this.camera);
     }
 
     // Static daylight - no updates needed
@@ -399,12 +393,7 @@ export class Game {
   }
 
   render() {
-    // Render water reflection first
-    if (this.water) {
-      this.water.renderReflection();
-    }
-    
-    // Then render the main scene
+    // Simple render - no complex reflections
     this.renderer.render(this.scene, this.camera);
   }
 

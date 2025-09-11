@@ -231,7 +231,7 @@ export class ReflectiveWater {
   }
 
   renderReflection() {
-    if (!this.reflectionRenderTarget || !this.reflectionCamera) return;
+    if (!this.reflectionRenderTarget || !this.reflectionCamera || !this.waterMesh) return;
 
     // Hide water during reflection rendering
     const wasVisible = this.waterMesh.visible;

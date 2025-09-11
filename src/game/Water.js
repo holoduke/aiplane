@@ -9,7 +9,7 @@ export class Water {
 
     this.waterMesh = null;
     this.waterUniforms = null;
-    
+
     // Reflection setup
     this.reflectionCamera = null;
     this.reflectionRenderTarget = null;
@@ -19,7 +19,7 @@ export class Water {
 
     // Water properties
     this.seaLevel = 40; // Height where water appears (matches terrain color levels)
-    this.waterSize = 50000; // Reduced water plane size for better scale
+    this.waterSize = 5000; // Reduced water plane size for better scale
 
     this.init();
   }
@@ -31,13 +31,18 @@ export class Water {
   }
 
   setupReflection() {
-    // Create reflection render target
-    this.reflectionRenderTarget = new THREE.WebGLRenderTarget(1024, 1024, {
+    // Create reflection render target with better size
+    const width = Math.min(1024, window.innerWidth);
+    const height = Math.min(1024, window.innerHeight);
+
+    this.reflectionRenderTarget = new THREE.WebGLRenderTarget(width, height, {
       format: THREE.RGBFormat,
       type: THREE.UnsignedByteType,
-      generateMipmaps: false,
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter
+      generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter,
+      magFilter: THREE.LinearFilter,
+      wrapS: THREE.ClampToEdgeWrap,
+      wrapT: THREE.ClampToEdgeWrap,
     });
 
     // Create reflection camera
@@ -50,9 +55,11 @@ export class Water {
 
     // Set up reflection plane (water surface)
     this.reflectionPlane.setFromNormalAndCoplanarPoint(
-      new THREE.Vector3(0, 1, 0), 
+      new THREE.Vector3(0, 1, 0),
       new THREE.Vector3(0, this.seaLevel, 0)
     );
+
+    console.log(`🌊 Reflection render target created: ${width}x${height}`);
   }
 
   createWaterShader() {
@@ -105,14 +112,21 @@ export class Water {
         vec4 projectedCoord = textureMatrix * vec4(vWorldPosition, 1.0);
         vec2 reflectionUV = projectedCoord.xy / projectedCoord.w;
         
+        // Clamp UV coordinates to prevent sampling outside texture
+        reflectionUV = clamp(reflectionUV, 0.0, 1.0);
+        
         // Sample reflection texture
         vec3 terrainReflection = texture2D(reflectionTexture, reflectionUV).rgb;
+        
+        // Debug: Show reflection texture directly for testing
+        // Uncomment this line to see raw reflection texture
+        // gl_FragColor = vec4(terrainReflection, 1.0); return;
         
         // Simple sky color for areas without terrain reflection
         vec3 skyColor = vec3(0.5, 0.7, 1.0);
         
-        // Mix terrain reflection with sky
-        vec3 finalReflection = mix(skyColor, terrainReflection, 0.8);
+        // Mix terrain reflection with sky (favor terrain reflection more)
+        vec3 finalReflection = mix(skyColor, terrainReflection, 0.9);
         
         // Combine water color with reflection
         vec3 waterColorFinal = mix(waterColor, finalReflection, fresnelFactor * reflectivity);
@@ -127,7 +141,7 @@ export class Water {
       transparency: { value: 0.8 },
       reflectivity: { value: 0.9 },
       reflectionTexture: { value: this.reflectionRenderTarget.texture },
-      textureMatrix: { value: new THREE.Matrix4() }
+      textureMatrix: { value: new THREE.Matrix4() },
     };
 
     // Create water material
@@ -153,15 +167,6 @@ export class Water {
   update(deltaTime, camera, sunLight) {
     if (!this.waterUniforms) return;
 
-    // Update time for animation
-    this.waterUniforms.time.value += deltaTime;
-
-    // Update sun position and properties
-    if (sunLight) {
-      this.waterUniforms.sunPosition.value.copy(sunLight.position);
-      this.waterUniforms.sunIntensity.value = sunLight.intensity || 1.0;
-    }
-
     // Keep water centered on camera (for infinite ocean effect)
     if (camera) {
       this.waterMesh.position.x = camera.position.x;
@@ -175,35 +180,48 @@ export class Water {
   updateReflection(camera) {
     if (!this.reflectionCamera || !this.reflectionRenderTarget) return;
 
-    // Calculate reflection matrix
-    const waterWorldPosition = new THREE.Vector3(0, this.seaLevel, 0);
-    this.reflectionMatrix.makeScale(1, -1, 1);
-    this.reflectionMatrix.setPosition(
-      0, 
-      2 * this.seaLevel - camera.position.y, 
-      0
-    );
+    // Mirror camera position across water plane
+    const reflectedPosition = camera.position.clone();
+    reflectedPosition.y = 2 * this.seaLevel - camera.position.y;
 
-    // Position reflection camera
-    const reflectedCameraPosition = camera.position.clone();
-    reflectedCameraPosition.applyMatrix4(this.reflectionMatrix);
-    
-    this.reflectionCamera.position.copy(reflectedCameraPosition);
-    this.reflectionCamera.up.set(0, 1, 0);
-    this.reflectionCamera.up.applyMatrix4(this.reflectionMatrix);
-    this.reflectionCamera.lookAt(
-      camera.getWorldDirection(new THREE.Vector3())
-        .applyMatrix4(this.reflectionMatrix)
-        .add(reflectedCameraPosition)
-    );
+    this.reflectionCamera.position.copy(reflectedPosition);
+    this.reflectionCamera.rotation.copy(camera.rotation);
+    this.reflectionCamera.fov = camera.fov;
+    this.reflectionCamera.aspect = camera.aspect;
+    this.reflectionCamera.near = camera.near;
+    this.reflectionCamera.far = camera.far;
+    this.reflectionCamera.updateProjectionMatrix();
 
-    // Update texture matrix for projection
+    // Flip the camera's up vector
+    this.reflectionCamera.up.set(0, -1, 0);
+
+    // Look in the same direction as main camera but flipped
+    const lookTarget = new THREE.Vector3();
+    camera.getWorldDirection(lookTarget);
+    lookTarget.y = -lookTarget.y; // Flip Y component
+    lookTarget.add(reflectedPosition);
+
+    this.reflectionCamera.lookAt(lookTarget);
+
+    // Update texture matrix for screen-space projection
     this.waterUniforms.textureMatrix.value
       .set(
-        0.5, 0.0, 0.0, 0.5,
-        0.0, 0.5, 0.0, 0.5,
-        0.0, 0.0, 0.5, 0.5,
-        0.0, 0.0, 0.0, 1.0
+        0.5,
+        0.0,
+        0.0,
+        0.5,
+        0.0,
+        0.5,
+        0.0,
+        0.5,
+        0.0,
+        0.0,
+        0.5,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        1.0
       )
       .multiply(this.reflectionCamera.projectionMatrix)
       .multiply(this.reflectionCamera.matrixWorldInverse);
@@ -211,37 +229,35 @@ export class Water {
 
   renderReflection() {
     // This method should be called from the game's render loop before rendering water
-    if (!this.reflectionRenderTarget || !this.reflectionCamera) return;
+    if (!this.reflectionRenderTarget || !this.reflectionCamera) {
+      console.warn("🌊 Reflection system not ready");
+      return;
+    }
 
     // Hide water mesh during reflection rendering
     const originalVisible = this.waterMesh.visible;
     this.waterMesh.visible = false;
 
-    // Store original render target
+    // Store original render target and clear color
     const originalRenderTarget = this.renderer.getRenderTarget();
-    
+    const originalClearColor = new THREE.Color();
+    this.renderer.getClearColor(originalClearColor);
+
+    // Set clear color for reflection (sky blue)
+    this.renderer.setClearColor(0x87ceeb, 1.0);
+
     // Render reflection
     this.renderer.setRenderTarget(this.reflectionRenderTarget);
+    this.renderer.clear();
     this.renderer.render(this.scene, this.reflectionCamera);
-    
-    // Restore original render target and water visibility
+
+    // Restore original render target, clear color and water visibility
     this.renderer.setRenderTarget(originalRenderTarget);
+    this.renderer.setClearColor(originalClearColor, 1.0);
     this.waterMesh.visible = originalVisible;
   }
 
-  // Methods to adjust water properties
-  setWaveHeight(height) {
-    if (this.waterUniforms) {
-      this.waterUniforms.waveHeight.value = height;
-    }
-  }
-
-  setWaveSpeed(speed) {
-    if (this.waterUniforms) {
-      this.waterUniforms.waveSpeed.value = speed;
-    }
-  }
-
+  // Simple methods to adjust water properties
   setWaterColor(color) {
     if (this.waterUniforms) {
       this.waterUniforms.waterColor.value.setHex(color);
@@ -260,39 +276,24 @@ export class Water {
     }
   }
 
-  // Preset water configurations
-  setCalmWater() {
-    this.setWaveHeight(0.8);
-    this.setWaveSpeed(0.5);
-    this.setTransparency(0.9);
+  // Simple preset water configurations
+  setClearWater() {
+    this.setWaterColor(0x1e3a8a);
+    this.setTransparency(0.85);
     this.setReflectivity(0.95);
-    console.log("🌊 Water set to calm");
+    console.log("🌊 Water set to clear");
   }
 
-  setRoughSea() {
-    this.setWaveHeight(2.5);
-    this.setWaveSpeed(2.0);
+  setDeepWater() {
+    this.setWaterColor(0x0f172a);
     this.setTransparency(0.7);
-    this.setReflectivity(0.8);
-    console.log("🌊 Water set to rough sea");
-  }
-
-  setStormyWater() {
-    this.setWaveHeight(4.0);
-    this.setWaveSpeed(0.3);
-    this.setTransparency(0.6);
-    this.setReflectivity(0.7);
-    if (this.waterUniforms) {
-      this.waterUniforms.foamIntensity.value = 1.5;
-    }
-    console.log("🌊 Water set to stormy");
+    this.setReflectivity(0.9);
+    console.log("🌊 Water set to deep");
   }
 
   setTropicalWater() {
-    this.setWaveHeight(1.2);
-    this.setWaveSpeed(0.8);
-    this.setWaterColor(0x00bfff);
-    this.setTransparency(0.95);
+    this.setWaterColor(0x06b6d4);
+    this.setTransparency(0.9);
     this.setReflectivity(0.98);
     console.log("🌊 Water set to tropical");
   }
@@ -303,7 +304,7 @@ export class Water {
       this.waterMesh.geometry.dispose();
       this.waterMesh.material.dispose();
     }
-    
+
     if (this.reflectionRenderTarget) {
       this.reflectionRenderTarget.dispose();
     }
