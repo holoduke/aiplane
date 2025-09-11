@@ -1,0 +1,7 @@
+{
+  "size": 5120,
+  "worldSize": 10000,
+  "maxHeight": 700,
+  "format": "pgm",
+  "description": "Grayscale heightmap: black=0m, white=700m"
+}

@@ -1,0 +1,315 @@
+import * as THREE from "three";
+
+export class LensFlare {
+  constructor(scene, camera, renderer) {
+    this.scene = scene;
+    this.camera = camera;
+    this.renderer = renderer;
+    this.lensFlareGroup = new THREE.Group();
+    this.flareElements = [];
+    this.sunPosition = new THREE.Vector3();
+    this.screenPosition = new THREE.Vector2();
+    this.raycaster = new THREE.Raycaster();
+    this.occluded = false;
+    
+    this.init();
+  }
+
+  init() {
+    this.createLensFlareElements();
+    this.scene.add(this.lensFlareGroup);
+    console.log("✨ Lens flare system initialized");
+  }
+
+  createLensFlareElements() {
+    // Define lens flare elements with different properties
+    const flareConfigs = [
+      // Main sun flare (brightest, largest)
+      { 
+        distance: 0.0, 
+        scale: 1.0, 
+        color: new THREE.Color(1.0, 0.9, 0.7),
+        opacity: 0.8,
+        type: 'sun'
+      },
+      // Secondary flares at various distances along the lens axis
+      { 
+        distance: 0.1, 
+        scale: 0.3, 
+        color: new THREE.Color(1.0, 0.5, 0.2),
+        opacity: 0.4,
+        type: 'ghost'
+      },
+      { 
+        distance: 0.2, 
+        scale: 0.15, 
+        color: new THREE.Color(0.8, 1.0, 0.3),
+        opacity: 0.3,
+        type: 'ring'
+      },
+      { 
+        distance: 0.4, 
+        scale: 0.4, 
+        color: new THREE.Color(0.4, 0.8, 1.0),
+        opacity: 0.25,
+        type: 'ghost'
+      },
+      { 
+        distance: 0.6, 
+        scale: 0.2, 
+        color: new THREE.Color(1.0, 0.3, 0.6),
+        opacity: 0.35,
+        type: 'ring'
+      },
+      { 
+        distance: 0.8, 
+        scale: 0.6, 
+        color: new THREE.Color(0.9, 0.9, 0.3),
+        opacity: 0.2,
+        type: 'ghost'
+      },
+      { 
+        distance: 1.0, 
+        scale: 0.25, 
+        color: new THREE.Color(0.6, 0.9, 1.0),
+        opacity: 0.3,
+        type: 'ring'
+      },
+      // Additional smaller flares
+      { 
+        distance: 1.2, 
+        scale: 0.1, 
+        color: new THREE.Color(1.0, 0.8, 0.4),
+        opacity: 0.4,
+        type: 'ghost'
+      },
+      { 
+        distance: 1.5, 
+        scale: 0.35, 
+        color: new THREE.Color(0.7, 0.4, 1.0),
+        opacity: 0.15,
+        type: 'ring'
+      }
+    ];
+
+    flareConfigs.forEach((config, index) => {
+      const flareElement = this.createFlareElement(config);
+      this.flareElements.push({
+        mesh: flareElement,
+        distance: config.distance,
+        scale: config.scale,
+        baseOpacity: config.opacity,
+        type: config.type
+      });
+      this.lensFlareGroup.add(flareElement);
+    });
+  }
+
+  createFlareElement(config) {
+    let geometry;
+    
+    // Create different geometries for different flare types
+    if (config.type === 'sun') {
+      geometry = new THREE.CircleGeometry(50, 32);
+    } else if (config.type === 'ring') {
+      geometry = new THREE.RingGeometry(20, 40, 16);
+    } else { // ghost
+      geometry = new THREE.CircleGeometry(30, 16);
+    }
+
+    // Create material with specific shader for lens flare effects
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        color: { value: config.color },
+        opacity: { value: config.opacity },
+        center: { value: new THREE.Vector2(0.5, 0.5) },
+        time: { value: 0.0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 color;
+        uniform float opacity;
+        uniform vec2 center;
+        uniform float time;
+        varying vec2 vUv;
+        
+        void main() {
+          vec2 uv = vUv - center;
+          float dist = length(uv);
+          
+          float alpha = opacity;
+          
+          ${config.type === 'sun' ? `
+            // Sun flare - bright center with soft falloff
+            alpha *= (1.0 - smoothstep(0.0, 0.5, dist));
+            alpha *= (1.0 + 0.1 * sin(time * 2.0 + dist * 10.0)); // Subtle shimmer
+          ` : config.type === 'ring' ? `
+            // Ring flare
+            float ringDist = abs(dist - 0.3);
+            alpha *= (1.0 - smoothstep(0.0, 0.2, ringDist));
+          ` : `
+            // Ghost flare - soft circular gradient
+            alpha *= (1.0 - smoothstep(0.1, 0.4, dist));
+            alpha *= (0.8 + 0.2 * sin(time * 3.0 + dist * 15.0)); // Subtle variation
+          `}
+          
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      depthWrite: false
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.scale.setScalar(config.scale);
+    
+    return mesh;
+  }
+
+  update(deltaTime, sunWorldPosition, terrain) {
+    if (!sunWorldPosition) return;
+
+    this.sunPosition.copy(sunWorldPosition);
+    
+    // Convert sun world position to screen coordinates
+    const sunScreenPos = this.sunPosition.clone();
+    sunScreenPos.project(this.camera);
+    
+    this.screenPosition.set(sunScreenPos.x, sunScreenPos.y);
+    
+    // Check if sun is behind camera or outside screen bounds
+    const isBehindCamera = sunScreenPos.z > 1.0;
+    const isOffScreen = Math.abs(sunScreenPos.x) > 1.1 || Math.abs(sunScreenPos.y) > 1.1;
+    
+    if (isBehindCamera || isOffScreen) {
+      this.lensFlareGroup.visible = false;
+      return;
+    }
+    
+    // Check for occlusion by terrain
+    this.checkOcclusion(terrain);
+    
+    // Calculate lens flare visibility based on sun angle to camera
+    const cameraDirection = new THREE.Vector3(0, 0, -1);
+    cameraDirection.applyQuaternion(this.camera.quaternion);
+    
+    const sunDirection = this.sunPosition.clone().sub(this.camera.position).normalize();
+    const sunAngle = cameraDirection.dot(sunDirection);
+    
+    // Only show lens flare when looking somewhat towards the sun
+    const flareVisibility = Math.max(0, (sunAngle - 0.3) / 0.7);
+    
+    if (flareVisibility <= 0 || this.occluded) {
+      this.lensFlareGroup.visible = false;
+      return;
+    }
+    
+    this.lensFlareGroup.visible = true;
+    
+    // Update each flare element
+    this.updateFlareElements(deltaTime, flareVisibility);
+  }
+
+  checkOcclusion(terrain) {
+    // Simple occlusion check - cast ray from camera to sun
+    if (!terrain) {
+      this.occluded = false;
+      return;
+    }
+
+    const direction = this.sunPosition.clone().sub(this.camera.position).normalize();
+    const distance = this.camera.position.distanceTo(this.sunPosition);
+    
+    this.raycaster.set(this.camera.position, direction);
+    
+    // Check intersection with terrain chunks
+    const intersections = [];
+    if (terrain.chunks) {
+      for (const [key, chunk] of terrain.chunks.entries()) {
+        if (chunk.mesh) {
+          const intersects = this.raycaster.intersectObject(chunk.mesh);
+          intersections.push(...intersects);
+        }
+      }
+    }
+    
+    // If any intersection is closer than the sun, it's occluded
+    this.occluded = intersections.some(intersection => intersection.distance < distance * 0.8);
+  }
+
+  updateFlareElements(deltaTime, visibility) {
+    const centerX = this.screenPosition.x;
+    const centerY = this.screenPosition.y;
+    
+    // Calculate lens axis (line from sun through screen center)
+    const lensAxisX = -centerX;
+    const lensAxisY = -centerY;
+    
+    this.flareElements.forEach((element, index) => {
+      const mesh = element.mesh;
+      const distance = element.distance;
+      
+      // Position along lens axis
+      const posX = centerX + lensAxisX * distance;
+      const posY = centerY + lensAxisY * distance;
+      
+      // Convert screen coordinates back to world position
+      const screenPos = new THREE.Vector3(posX, posY, 0.1);
+      screenPos.unproject(this.camera);
+      
+      // Position the flare element
+      const directionToCamera = screenPos.sub(this.camera.position).normalize();
+      const flareDistance = 100; // Distance from camera
+      mesh.position.copy(this.camera.position).add(directionToCamera.multiplyScalar(flareDistance));
+      
+      // Make flare face camera
+      mesh.lookAt(this.camera.position);
+      
+      // Update material uniforms
+      if (mesh.material.uniforms) {
+        mesh.material.uniforms.time.value += deltaTime;
+        
+        // Adjust opacity based on visibility and distance from center
+        const distanceFromCenter = Math.sqrt(posX * posX + posY * posY);
+        const distanceFactor = Math.max(0, 1.0 - distanceFromCenter * 0.5);
+        const finalOpacity = element.baseOpacity * visibility * distanceFactor;
+        
+        mesh.material.uniforms.opacity.value = finalOpacity;
+        
+        // Scale based on distance from center (smaller when further from center)
+        const scaleFactor = 0.5 + 0.5 * distanceFactor;
+        mesh.scale.setScalar(element.scale * scaleFactor);
+      }
+    });
+  }
+
+  setSunIntensity(intensity) {
+    // Adjust overall lens flare intensity
+    this.flareElements.forEach(element => {
+      if (element.mesh.material.uniforms) {
+        element.mesh.material.uniforms.opacity.value = element.baseOpacity * intensity;
+      }
+    });
+  }
+
+  cleanup() {
+    if (this.lensFlareGroup) {
+      this.scene.remove(this.lensFlareGroup);
+      
+      this.flareElements.forEach(element => {
+        element.mesh.geometry.dispose();
+        element.mesh.material.dispose();
+      });
+      
+      this.flareElements = [];
+    }
+  }
+}
