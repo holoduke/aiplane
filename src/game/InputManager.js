@@ -74,21 +74,14 @@ export class InputManager {
       this.player.steerRight(deltaTime)
     }
     
-    // Pitch controls (W = climb up, S = dive down)
-    if (this.keys['KeyW'] || this.keys['ArrowUp']) {
-      this.player.climbUp(deltaTime)
+    // Laser firing
+    if (this.keys['Space']) {
+      this.player.fireLasers()
     }
     
-    if (this.keys['KeyS'] || this.keys['ArrowDown']) {
-      this.player.climbDown(deltaTime)
-    }
-    
-    
-    // Only stabilize if no input is being given
+    // Only stabilize if no steering input is being given
     if (!this.keys['KeyA'] && !this.keys['ArrowLeft'] && 
-        !this.keys['KeyD'] && !this.keys['ArrowRight'] &&
-        !this.keys['KeyW'] && !this.keys['ArrowUp'] &&
-        !this.keys['KeyS'] && !this.keys['ArrowDown']) {
+        !this.keys['KeyD'] && !this.keys['ArrowRight']) {
       this.player.stabilize(deltaTime)
     }
   }
@@ -96,9 +89,8 @@ export class InputManager {
   getControlsHelp() {
     return [
       'A/D or Arrow Keys: Steer Left/Right',
-      'W/S or Up/Down: Climb/Dive', 
+      'Space: Fire Lasers',
       'Shift: Afterburner',
-      'Mouse: Look around',
       'Fighter jet flies forward automatically!'
     ]
   }

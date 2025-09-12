@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 
 export class Player {
   constructor(scene, camera) {
@@ -6,12 +8,13 @@ export class Player {
     this.camera = camera;
     this.mesh = null;
     this.velocity = new THREE.Vector3();
-    this.position = new THREE.Vector3(0, 300, -4000);
+    this.position = new THREE.Vector3(0, 650, -4000);
     this.rotation = new THREE.Euler();
 
     // Balanced speeds for better control
-    this.forwardSpeed = 200; // 900 km/h base speed (250 m/s) - much more manageable
-    this.maxSpeed = 200; // Maximum speed
+    this.baseSpeed = 3000; // Cruise/base speed (unchanging target)
+    this.forwardSpeed = this.baseSpeed; // Current speed, starts at base
+    this.maxSpeed = 5000; // Maximum speed
     this.steerSpeed = 600; // Steering responsiveness
     this.maxSteerAngle = Math.PI / 3; // 60 degrees - higher turn angle
 
@@ -19,290 +22,234 @@ export class Player {
     this.acceleration = 800; // How quickly speed changes
     this.currentTurnRate = 0; // Current turning rate
     this.maxTurnRate = 5.5; // Much higher turning rate for agile turns
-    this.turnAcceleration = 6.0; // Faster turn acceleration for sharp turns
+    this.turnAcceleration = 16.0; // Faster turn acceleration for sharp turns
     this.turnDamping = 0.85; // Less damping for more responsive feel
     this.bankAngle = 0; // Current banking angle
     this.maxBankAngle = Math.PI / 5; // 90 degrees max bank - full banking
     this.pitchAngle = 0; // Current pitch angle
-    this.maxPitchAngle = Math.PI / 5; // 36 degrees max pitch - slightly higher
+    this.maxPitchAngle = Math.PI / 10; // 36 degrees max pitch - slightly higher
+
+    // Turn angle limits
+    this.maxTurnAngle = (560 * Math.PI) / 180; // 90 degrees max turn angle
+    this.currentTurnAngle = 0; // Track current turn angle from center
 
     // Advanced flight characteristics
     this.angularVelocity = new THREE.Vector3(); // For realistic rotation
-    this.thrust = 0.8; // Current thrust level
-    this.targetThrust = 0.8;
+    this.thrust = 1.0; // Start at full cruise
+    this.targetThrust = 1.0;
     this.afterburner = false;
 
     // Smooth camera system
-    this.cameraPosition = new THREE.Vector3(0, 1500, -1000);
-    this.cameraTarget = new THREE.Vector3();
+    this.cameraPosition = new THREE.Vector3(0, 1500, -1900);
     this.cameraLookAt = new THREE.Vector3();
-    this.cameraShake = new THREE.Vector3();
 
     // Status
     this.health = 100;
     this.distanceTraveled = 0;
     this.startZ = -4000;
-    this.terrainFollowMode = false;
-    this.targetAltitudeOffset = 400;
 
     // Effects
-    this.exhaustParticles = [];
-    this.trailParticles = [];
+    this.exhaustGlows = [];
 
-    this.createAdvancedJet();
+    // Laser system
+    this.lasers = [];
+    this.laserSpeed = 8000; // Very fast laser speed
+    this.lastLaserTime = 0;
+    this.laserCooldown = 150; // 150ms between shots
+
+    this.loadJetModel();
   }
 
+  async loadJetModel() {
+    try {
+      // First load the materials (.mtl file)
+      const mtlLoader = new MTLLoader();
+      mtlLoader.setPath("/spaceship/");
+
+      // Load materials first
+      const materials = await new Promise((resolve, reject) => {
+        mtlLoader.load(
+          "justigue_league_flying_vehicle.mtl",
+          resolve,
+          undefined,
+          reject
+        );
+      });
+
+      materials.preload();
+
+      // Then load the OBJ file with materials
+      const objLoader = new OBJLoader();
+      objLoader.setPath("/spaceship/");
+      objLoader.setMaterials(materials);
+
+      const object = await new Promise((resolve, reject) => {
+        objLoader.load(
+          "justigue league flying vehicle.obj",
+          resolve,
+          undefined,
+          reject
+        );
+      });
+
+      this.mesh = object;
+
+      // Scale the spaceship appropriately
+      this.mesh.scale.setScalar(0.5); // OBJ models often need smaller scale
+      this.mesh.position.copy(this.position);
+
+      // Enable shadows for all meshes in the model
+      this.mesh.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+
+          // Enhance materials if needed
+          if (child.material) {
+            // Ensure materials work well with lighting
+            if (child.material.map) {
+              child.material.map.flipY = false; // Fix texture orientation if needed
+            }
+            child.material.needsUpdate = true;
+          }
+        }
+      });
+
+      // Initialize exhaust effects
+      this.createAdvancedExhaustSystem();
+
+      this.scene.add(this.mesh);
+      console.log("🚀 Justice League spaceship (OBJ) loaded successfully");
+    } catch (error) {
+      console.warn(
+        "Failed to load OBJ spaceship model, trying without materials:",
+        error
+      );
+
+      // Fallback: try loading OBJ without materials
+      try {
+        const objLoader = new OBJLoader();
+        objLoader.setPath("/spaceship/");
+
+        const object = await new Promise((resolve, reject) => {
+          objLoader.load(
+            "justigue league flying vehicle.obj",
+            resolve,
+            undefined,
+            reject
+          );
+        });
+
+        this.mesh = object;
+        this.mesh.scale.setScalar(0.5);
+        this.mesh.position.copy(this.position);
+
+        // Apply basic material since MTL failed
+        const basicMaterial = new THREE.MeshStandardMaterial({
+          color: 0x4a90e2,
+          metalness: 0.7,
+          roughness: 0.3,
+        });
+
+        this.mesh.traverse((child) => {
+          if (child.isMesh) {
+            child.material = basicMaterial;
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+
+        // Exhaust effects handled in main success path
+
+        this.scene.add(this.mesh);
+        console.log("🚀 Spaceship (OBJ only) loaded successfully");
+      } catch (objError) {
+        console.warn(
+          "Failed to load OBJ model entirely, using fallback:",
+          objError
+        );
+        this.createAdvancedJet(); // Final fallback to procedural model
+      }
+    }
+  }
+
+
   createAdvancedJet() {
+    console.warn("Fallback to procedural model - OBJ loading failed");
+    // This is now just a basic fallback when OBJ loading completely fails
     const group = new THREE.Group();
 
-    // Main fuselage - more detailed
-    const fuselageGeometry = new THREE.ConeGeometry(12, 120, 8);
-    const fuselageMaterial = new THREE.MeshStandardMaterial({
-      color: 0x2c3e50,
-      roughness: 0.4,
-      metalness: 0.6,
+    const basicMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4a90e2,
+      metalness: 0.7,
+      roughness: 0.3,
     });
-    const fuselage = new THREE.Mesh(fuselageGeometry, fuselageMaterial);
+
+    // Simple fallback geometry
+    const fuselageGeometry = new THREE.CylinderGeometry(8, 16, 100, 12);
+    const fuselage = new THREE.Mesh(fuselageGeometry, basicMaterial);
     fuselage.castShadow = true;
     fuselage.receiveShadow = true;
     fuselage.rotation.x = Math.PI / 2;
-    fuselage.position.z = 10;
     group.add(fuselage);
 
-    // Nose cone
-    const noseGeometry = new THREE.ConeGeometry(8, 40, 8);
-    const nose = new THREE.Mesh(noseGeometry, fuselageMaterial);
-    nose.castShadow = true;
-    nose.receiveShadow = true;
-    nose.rotation.x = Math.PI / 2;
-    nose.position.z = 50;
-    group.add(nose);
-
-    // Main wings - swept design
-    const wingGeometry = new THREE.BufferGeometry();
-    const wingVertices = new Float32Array([
-      // Left wing
-      -150, 0, -20, -40, 0, 20, -40, 8, 20, -150, 0, -20, -40, 8, 20, -150, 8,
-      -20,
-      // Right wing
-      150, 0, -20, 40, 0, 20, 40, 8, 20, 150, 0, -20, 40, 8, 20, 150, 8, -20,
-    ]);
-    wingGeometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(wingVertices, 3)
-    );
-    wingGeometry.computeVertexNormals();
-
-    const wingMaterial = new THREE.MeshStandardMaterial({
-      color: 0x34495e,
-      roughness: 0.3,
-      metalness: 0.7,
-    });
-    const wings = new THREE.Mesh(wingGeometry, wingMaterial);
-    wings.castShadow = true;
-    wings.receiveShadow = true;
-    group.add(wings);
-
-    // Vertical stabilizer
-    const tailGeometry = new THREE.BoxGeometry(4, 40, 20);
-    const tail = new THREE.Mesh(tailGeometry, wingMaterial);
-    tail.castShadow = true;
-    tail.receiveShadow = true;
-    tail.position.set(0, 15, -45);
-    group.add(tail);
-
-    // Horizontal stabilizers
-    const hStabGeometry = new THREE.BoxGeometry(60, 4, 15);
-    const leftHStab = new THREE.Mesh(hStabGeometry, wingMaterial);
-    leftHStab.castShadow = true;
-    leftHStab.receiveShadow = true;
-    leftHStab.position.set(0, 5, -45);
-    group.add(leftHStab);
-
-    // Advanced cockpit
-    const cockpitGeometry = new THREE.SphereGeometry(15, 16, 16);
-    const cockpitMaterial = new THREE.MeshPhongMaterial({
-      color: 0x1a252f,
-      transparent: true,
-      opacity: 0.8,
-      shininess: 120,
-    });
-    const cockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
-    cockpit.castShadow = true;
-    cockpit.receiveShadow = true;
-    cockpit.position.set(0, 8, 25);
-    cockpit.scale.set(1, 0.7, 1.3);
-    group.add(cockpit);
-
-    // Twin engines
-    const engineGeometry = new THREE.CylinderGeometry(8, 12, 35, 8);
-    const engineMaterial = new THREE.MeshPhongMaterial({
-      color: 0x1c1c1c,
-      shininess: 90,
-    });
-
-    const leftEngine = new THREE.Mesh(engineGeometry, engineMaterial);
-    leftEngine.castShadow = true;
-    leftEngine.receiveShadow = true;
-    leftEngine.rotation.x = Math.PI / 2;
-    leftEngine.position.set(-25, 0, -35);
-    group.add(leftEngine);
-
-    const rightEngine = new THREE.Mesh(engineGeometry, engineMaterial);
-    rightEngine.castShadow = true;
-    rightEngine.receiveShadow = true;
-    rightEngine.rotation.x = Math.PI / 2;
-    rightEngine.position.set(25, 0, -35);
-    group.add(rightEngine);
-
-    // Engine exhausts with glow
-    this.createEngineExhaust(group, -25, 0, -52);
-    this.createEngineExhaust(group, 25, 0, -52);
-
-    // Wing tip lights
-    this.createWingTipLights(group);
-
-    // Advanced particle systems
-    this.createAdvancedExhaustSystem(group);
-    this.createSonicBoomEffect(group);
+    this.createAdvancedExhaustSystem();
 
     this.mesh = group;
     this.mesh.position.copy(this.position);
     this.scene.add(this.mesh);
   }
 
-  createEngineExhaust(parent, x, y, z) {
-    // Exhaust nozzle
-    const exhaustGeometry = new THREE.CylinderGeometry(6, 8, 12, 8);
-    const exhaustMaterial = new THREE.MeshPhongMaterial({
-      color: 0x441100,
-      emissive: 0x221100,
-      shininess: 60,
-    });
-    const exhaust = new THREE.Mesh(exhaustGeometry, exhaustMaterial);
-    exhaust.castShadow = true;
-    exhaust.receiveShadow = true;
-    exhaust.rotation.x = Math.PI / 2;
-    exhaust.position.set(x, y, z);
-    parent.add(exhaust);
+  createAdvancedExhaustSystem() {
+    // Simple exhaust glow effect using bright emissive geometry
+    const exhaustPositions = [
+      new THREE.Vector3(-25, 120, -232), // Left engine exhaust
+      new THREE.Vector3(25, 120, -232), // Right engine exhaust
+    ];
 
-    // Afterburner glow
-    const glowGeometry = new THREE.SphereGeometry(4, 8, 8);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x0080ff,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.position.set(x, y, z - 8);
-    glow.userData.isExhaustGlow = true;
-    parent.add(glow);
-  }
+    this.exhaustGlows = [];
 
-  createWingTipLights(parent) {
-    // Navigation lights
-    const lightGeometry = new THREE.SphereGeometry(2, 8, 8);
-
-    // Red light (left wing)
-    const redLightMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const redLight = new THREE.Mesh(lightGeometry, redLightMaterial);
-    redLight.position.set(-145, 0, -15);
-    parent.add(redLight);
-
-    // Green light (right wing)
-    const greenLightMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const greenLight = new THREE.Mesh(lightGeometry, greenLightMaterial);
-    greenLight.position.set(145, 0, -15);
-    parent.add(greenLight);
-
-    // Tail navigation lights - blinking
-    const tailLightGeometry = new THREE.SphereGeometry(3, 8, 8);
-
-    // Red tail light (left side)
-    const redTailLightMaterial = new THREE.MeshStandardMaterial({
-      color: 0xff0000,
-      emissive: 0x000000,
-      transparent: true,
-      opacity: 1.0,
-    });
-    this.redTailLight = new THREE.Mesh(tailLightGeometry, redTailLightMaterial);
-    this.redTailLight.position.set(-3, 25, -50);
-    parent.add(this.redTailLight);
-
-    // Green tail light (right side)
-    const greenTailLightMaterial = new THREE.MeshStandardMaterial({
-      color: 0x00ff00,
-      emissive: 0x000000,
-      transparent: true,
-      opacity: 1.0,
-    });
-    this.greenTailLight = new THREE.Mesh(
-      tailLightGeometry,
-      greenTailLightMaterial
-    );
-    this.greenTailLight.position.set(3, 25, -50);
-    parent.add(this.greenTailLight);
-
-    // Initialize blinking state
-    this.lightBlinkTimer = 0;
-    this.lightBlinkRate = 2.0; // Blinks per second
-  }
-
-  createAdvancedExhaustSystem(parent) {
-    // High-performance exhaust particles
-    const particleCount = 300;
-    const particles = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-    const velocities = new Float32Array(particleCount * 3);
-    const ages = new Float32Array(particleCount);
-
-    for (let i = 0; i < particleCount; i++) {
-      positions[i * 3] = 0;
-      positions[i * 3 + 1] = 0;
-      positions[i * 3 + 2] = 0;
-      velocities[i * 3] = 0;
-      velocities[i * 3 + 1] = 0;
-      velocities[i * 3 + 2] = 0;
-      ages[i] = Math.random();
-    }
-
-    particles.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    particles.setAttribute(
-      "velocity",
-      new THREE.BufferAttribute(velocities, 3)
-    );
-    particles.setAttribute("age", new THREE.BufferAttribute(ages, 1));
-
-    const particleMaterial = new THREE.PointsMaterial({
-      color: 0x0080ff,
-      size: 4,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-    });
-
-    this.exhaustSystem = new THREE.Points(particles, particleMaterial);
-    parent.add(this.exhaustSystem);
-  }
-
-  createSonicBoomEffect(parent) {
-    // Shock wave rings for supersonic flight
-    this.shockWaveRings = [];
-    for (let i = 0; i < 3; i++) {
-      const ringGeometry = new THREE.RingGeometry(20 + i * 10, 25 + i * 10, 16);
-      const ringMaterial = new THREE.MeshBasicMaterial({
-        color: 0x88ccff,
+    exhaustPositions.forEach((pos, index) => {
+      // Main exhaust glow - bright emissive core
+      const coreGeometry = new THREE.ConeGeometry(8, 40, 8);
+      const coreMaterial = new THREE.MeshStandardMaterial({
+        color: 0x00aaff,
         transparent: true,
-        opacity: 0.1,
-        side: THREE.DoubleSide,
+        opacity: 0.9,
+        emissive: 0x00aaff,
+        emissiveIntensity: 2.0, // Very bright for bloom effect
+        metalness: 0,
+        roughness: 1,
       });
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.position.z = -60 - i * 20;
-      ring.visible = false;
-      parent.add(ring);
-      this.shockWaveRings.push(ring);
-    }
+      const core = new THREE.Mesh(coreGeometry, coreMaterial);
+      core.position.copy(pos);
+      core.rotation.x = -Math.PI / 2; // Point backwards (rotate 90 degrees)
+
+      // Outer glow halo
+      const haloGeometry = new THREE.ConeGeometry(12, 60, 8);
+      const haloMaterial = new THREE.MeshStandardMaterial({
+        color: 0x0066cc,
+        transparent: true,
+        opacity: 0.4,
+        emissive: 0x0066cc,
+        emissiveIntensity: 1.5,
+        blending: THREE.AdditiveBlending,
+        metalness: 0,
+        roughness: 1,
+      });
+      const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+      halo.position.copy(pos);
+      halo.rotation.x = -Math.PI / 2; // Point backwards (rotate 90 degrees)
+
+      this.exhaustGlows.push({ core, halo });
+
+      if (this.mesh) {
+        this.mesh.add(core);
+        this.mesh.add(halo);
+      }
+    });
   }
+
 
   update(deltaTime) {
     // Enhanced physics update
@@ -311,12 +258,14 @@ export class Player {
     // Only auto-fly if game has started
     if (window.game && window.game.gameStarted) {
       this.autoFlyForward(deltaTime);
-      this.updateTerrainFollowing(deltaTime);
-      this.clampPosition();
     }
 
-    this.position.copy(this.mesh.position);
+    // Keep position property in sync with mesh position
+    if (this.mesh) {
+      this.position.copy(this.mesh.position);
+    }
     this.updateAdvancedEffects(deltaTime);
+    this.updateLasers(deltaTime);
 
     // Camera update
     if (window.game && window.game.gameStarted) {
@@ -325,6 +274,12 @@ export class Player {
   }
 
   updateFlightDynamics(deltaTime) {
+    // Don't update if mesh isn't loaded yet
+    if (!this.mesh) return;
+
+    // Assume 60 FPS target for per-frame equivalents
+    const frameEquivalentDt = deltaTime * 60;
+
     // Smooth thrust changes
     this.thrust = THREE.MathUtils.lerp(
       this.thrust,
@@ -332,204 +287,129 @@ export class Player {
       deltaTime * 2
     );
 
-    // Update speed based on thrust
-    const targetSpeed = this.forwardSpeed * this.thrust;
-    const currentSpeed = this.velocity.length();
-    const speedDiff = targetSpeed - currentSpeed;
+    // Update speed toward target
+    const targetSpeed = this.baseSpeed * this.thrust;
+    const speedDiff = targetSpeed - this.forwardSpeed;
 
-    if (Math.abs(speedDiff) > 10) {
-      const accel = Math.sign(speedDiff) * this.acceleration * deltaTime;
-      this.forwardSpeed = Math.max(
-        800,
-        Math.min(this.maxSpeed, this.forwardSpeed + accel)
-      );
-    }
+    // Always adjust (remove >10 threshold for smoother changes)
+    const accel = Math.sign(speedDiff) * this.acceleration * deltaTime;
+    this.forwardSpeed = Math.max(
+      80,
+      Math.min(this.maxSpeed, this.forwardSpeed + accel)
+    );
 
-    // Apply angular damping for more realistic rotation
-    this.angularVelocity.multiplyScalar(0.95);
+    // Time-based angular damping
+    const angularDamping = Math.pow(0.95, frameEquivalentDt);
+    this.angularVelocity.multiplyScalar(angularDamping);
+
+    // Apply rotations incrementally
     this.mesh.rotation.x += this.angularVelocity.x * deltaTime;
     this.mesh.rotation.y += this.angularVelocity.y * deltaTime;
     this.mesh.rotation.z += this.angularVelocity.z * deltaTime;
   }
 
-  updateTerrainFollowing(deltaTime) {
-    if (!this.terrainFollowMode) return;
-
-    const terrainHeight = this.getTerrainHeightAtPosition();
-    const targetAltitude = terrainHeight + this.targetAltitudeOffset;
-    const currentAltitude = this.mesh.position.y;
-
-    // Look ahead for smoother terrain following
-    const lookAheadDistance = 300 + this.forwardSpeed * 0.1;
-    const futureTerrainHeight = this.getTerrainHeightAtPosition(
-      this.mesh.position.x,
-      this.mesh.position.z + lookAheadDistance
-    );
-    const futureTargetAltitude =
-      futureTerrainHeight + this.targetAltitudeOffset;
-
-    const finalTargetAltitude = Math.max(targetAltitude, futureTargetAltitude);
-    const altitudeDifference = finalTargetAltitude - currentAltitude;
-    const adjustmentRate = 2.0;
-
-    if (Math.abs(altitudeDifference) > 30) {
-      this.mesh.position.y += altitudeDifference * adjustmentRate * deltaTime;
-
-      // Dynamic pitch based on speed and altitude change
-      const pitchAmount = Math.max(
-        -Math.PI / 6,
-        Math.min(Math.PI / 6, altitudeDifference * 0.01)
-      );
-      this.pitchAngle = THREE.MathUtils.lerp(
-        this.pitchAngle,
-        -pitchAmount,
-        deltaTime * 4
-      );
-      this.mesh.rotation.x = this.pitchAngle;
-    } else {
-      this.pitchAngle = THREE.MathUtils.lerp(this.pitchAngle, 0, deltaTime * 3);
-      this.mesh.rotation.x = this.pitchAngle;
-    }
-  }
 
   autoFlyForward(deltaTime) {
-    // Move in the direction the plane is facing with enhanced realism
+    if (!this.mesh) return;
+
+    // Move in the direction the plane is facing
     const forward = new THREE.Vector3(0, 0, 1);
     forward.applyQuaternion(this.mesh.quaternion);
+
+    // Set velocity to reflect actual direction and speed
+    this.velocity.copy(forward).multiplyScalar(this.forwardSpeed);
 
     const movement = forward.multiplyScalar(this.forwardSpeed * deltaTime);
     this.mesh.position.add(movement);
 
     this.distanceTraveled += this.forwardSpeed * deltaTime;
-
-    // Add slight atmospheric turbulence
-    if (Math.random() < 0.1) {
-      const turbulence = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 1,
-        0
-      );
-      this.mesh.position.add(turbulence);
-    }
   }
 
   updateAdvancedEffects(deltaTime) {
-    this.updateExhaustParticles(deltaTime);
+    this.updateExhaustGlow(deltaTime);
     this.updateEngineGlow();
-    this.updateSonicEffects();
-    this.updateCameraShake(deltaTime);
-    this.updateNavigationLights(deltaTime);
   }
 
-  updateExhaustParticles(deltaTime) {
-    if (!this.exhaustSystem) return;
+  updateExhaustGlow(deltaTime) {
+    if (!this.exhaustGlows) return;
 
-    const positions = this.exhaustSystem.geometry.attributes.position.array;
-    const velocities = this.exhaustSystem.geometry.attributes.velocity.array;
-    const ages = this.exhaustSystem.geometry.attributes.age.array;
+    const time = Date.now() * 0.001;
+    const thrustIntensity = this.thrust;
+    const speedFactor = Math.min(this.forwardSpeed / this.maxSpeed, 1.0);
 
-    for (let i = 0; i < positions.length / 3; i++) {
-      const i3 = i * 3;
+    this.exhaustGlows.forEach((exhaust, index) => {
+      // Pulsing effect based on thrust and speed
+      const basePulse = 0.8 + Math.sin(time * 8 + index) * 0.2;
+      const thrustPulse = thrustIntensity * basePulse;
 
-      // Update particle positions
-      positions[i3] += velocities[i3] * deltaTime;
-      positions[i3 + 1] += velocities[i3 + 1] * deltaTime;
-      positions[i3 + 2] += velocities[i3 + 2] * deltaTime;
+      // Core glow intensity
+      const coreIntensity = 1.5 + thrustPulse * 1.0;
+      exhaust.core.material.emissiveIntensity = coreIntensity;
+      exhaust.core.material.opacity = 0.7 + thrustPulse * 0.3;
 
-      ages[i] += deltaTime * 2;
+      // Halo glow intensity
+      const haloIntensity = 1.0 + thrustPulse * 0.8;
+      exhaust.halo.material.emissiveIntensity = haloIntensity;
+      exhaust.halo.material.opacity = 0.3 + thrustPulse * 0.2;
 
-      // Reset particles when they're too old
-      if (ages[i] > 1 || Math.random() < 0.05) {
-        // Spawn from engine exhausts
-        const engineSide = Math.random() < 0.5 ? -25 : 25;
-        positions[i3] = engineSide;
-        positions[i3 + 1] = 0;
-        positions[i3 + 2] = -52;
+      // Scale effect based on thrust - more powerful exhaust when boosting
+      const scaleMultiplier = 1.0 + speedFactor * 0.3;
+      exhaust.core.scale.setScalar(scaleMultiplier);
+      exhaust.halo.scale.setScalar(scaleMultiplier);
 
-        // High-speed exhaust velocity
-        velocities[i3] = (Math.random() - 0.5) * 100;
-        velocities[i3 + 1] = (Math.random() - 0.5) * 50;
-        velocities[i3 + 2] = -(this.forwardSpeed * 0.8 + Math.random() * 400);
-
-        ages[i] = 0;
+      // Color shifting for afterburner effect
+      if (this.afterburner) {
+        if (exhaust.core.material.color)
+          exhaust.core.material.color.setHex(0xff4400); // Orange-red
+        if (exhaust.core.material.emissive)
+          exhaust.core.material.emissive.setHex(0xff4400);
+        if (exhaust.halo.material.color)
+          exhaust.halo.material.color.setHex(0xff6600);
+        if (exhaust.halo.material.emissive)
+          exhaust.halo.material.emissive.setHex(0xff6600);
+      } else {
+        if (exhaust.core.material.color)
+          exhaust.core.material.color.setHex(0x00aaff); // Blue
+        if (exhaust.core.material.emissive)
+          exhaust.core.material.emissive.setHex(0x00aaff);
+        if (exhaust.halo.material.color)
+          exhaust.halo.material.color.setHex(0x0066cc);
+        if (exhaust.halo.material.emissive)
+          exhaust.halo.material.emissive.setHex(0x0066cc);
       }
-    }
-
-    this.exhaustSystem.geometry.attributes.position.needsUpdate = true;
-    this.exhaustSystem.geometry.attributes.age.needsUpdate = true;
+    });
   }
 
   updateEngineGlow() {
-    // Dynamic engine glow based on thrust
-    this.mesh.children.forEach((child) => {
-      if (child.userData.isExhaustGlow) {
-        const intensity = this.thrust;
-        child.material.opacity = 0.4 + intensity * 0.6;
+    // Dynamic engine glow based on thrust - only for spaceship effects
+    if (!this.mesh) return;
 
-        // Color shift based on afterburner
-        if (this.afterburner) {
-          child.material.color.setHex(0xff4400);
-        } else {
-          child.material.color.setHex(0x0080ff);
+    this.mesh.traverse((child) => {
+      if (child.userData && child.userData.isExhaustGlow) {
+        const intensity = this.thrust;
+        if (child.material) {
+          child.material.opacity = 0.4 + intensity * 0.6;
+
+          // Color shift based on afterburner
+          if (this.afterburner) {
+            child.material.color.setHex(0xff4400);
+          } else {
+            child.material.color.setHex(0x0080ff);
+          }
         }
       }
     });
   }
 
-  updateSonicEffects() {
-    // Show shock waves when going fast enough
-    const showShockWaves = this.forwardSpeed > 1500;
 
-    this.shockWaveRings.forEach((ring, index) => {
-      ring.visible = showShockWaves;
-      if (showShockWaves) {
-        ring.rotation.x += 0.1;
-        ring.material.opacity =
-          0.05 + Math.sin(Date.now() * 0.01 + index) * 0.03;
-      }
-    });
-  }
-
-  updateCameraShake(deltaTime) {
-    // Speed-based camera shake
-    const shakeIntensity = Math.min(1, this.forwardSpeed / 2000);
-    this.cameraShake.set(
-      (Math.random() - 0.5) * shakeIntensity * 5,
-      (Math.random() - 0.5) * shakeIntensity * 3,
-      (Math.random() - 0.5) * shakeIntensity * 2
-    );
-  }
-
-  updateNavigationLights(deltaTime) {
-    // Update blinking tail navigation lights
-    if (!this.redTailLight || !this.greenTailLight) return;
-
-    this.lightBlinkTimer += deltaTime;
-
-    // Calculate blink state (on/off cycle)
-    const blinkCycle = this.lightBlinkTimer * this.lightBlinkRate;
-    const blinkPhase = blinkCycle % 1.0; // 0 to 1
-
-    // Different blink patterns for red and green
-    const redBlinkOn = blinkPhase < 0.5; // Red blinks first half of cycle
-    const greenBlinkOn = blinkPhase >= 0.5; // Green blinks second half of cycle
-
-    // Update light opacity for blinking effect
-    this.redTailLight.material.opacity = redBlinkOn ? 1.0 : 0.1;
-    this.greenTailLight.material.opacity = greenBlinkOn ? 1.0 : 0.1;
-
-    // Add slight emissive glow when lights are on
-    const redEmissive = redBlinkOn ? 0x330000 : 0x000000;
-    const greenEmissive = greenBlinkOn ? 0x003300 : 0x000000;
-
-    this.redTailLight.material.emissive.setHex(redEmissive);
-    this.greenTailLight.material.emissive.setHex(greenEmissive);
-  }
 
   updateAdvancedCamera(deltaTime) {
+    // Don't update camera if mesh isn't loaded yet
+    if (!this.mesh) return;
+
     // Enhanced dynamic camera with speed compensation
-    const cameraDistance = 2000 + this.forwardSpeed * 0.2; // Further back at high speeds
-    const cameraHeight = 1200; // Fixed height - no more height changes during banking
+    const cameraDistance = 50 + this.forwardSpeed * 0.01; // Further back at high speeds
+    const cameraHeight = 400; // Fixed height - no more height changes during banking
 
     // Get plane's backward direction
     const backward = new THREE.Vector3(0, 0, -1);
@@ -548,14 +428,13 @@ export class Player {
       // Don't add vertical offset during banking
     }
 
-    // Add camera shake
-    cameraOffset.add(this.cameraShake);
 
     const targetCameraPos = this.mesh.position.clone().add(cameraOffset);
 
-    // Smooth camera following with speed compensation
-    const followSpeed = 0.04 + this.forwardSpeed / 12000; // Slightly more responsive
-    this.cameraPosition.lerp(targetCameraPos, followSpeed);
+    // Smooth camera following (time-based alpha)
+    const followRate = 5;
+    const followAlpha = 1 - Math.exp(-followRate * deltaTime);
+    this.cameraPosition.lerp(targetCameraPos, followAlpha);
     this.camera.position.copy(this.cameraPosition);
 
     // Look ahead distance based on speed and turning
@@ -584,71 +463,92 @@ export class Player {
       );
     }
 
-    // Smooth look-at with anticipation
-    this.cameraLookAt.lerp(lookAtTarget, 0.08);
+    // Smooth look-at (time-based alpha)
+    const lookAtRate = 3;
+    const lookAtAlpha = 1 - Math.exp(-lookAtRate * deltaTime);
+    this.cameraLookAt.lerp(lookAtTarget, lookAtAlpha);
     this.camera.lookAt(this.cameraLookAt);
   }
 
   // Enhanced steering with proper flight dynamics
   steerLeft(deltaTime) {
-    this.currentTurnRate = Math.min(
-      this.maxTurnRate,
-      this.currentTurnRate + this.turnAcceleration * deltaTime
-    );
+    // Check if we can turn left (haven't reached max left turn angle)
+    if (this.currentTurnAngle > -this.maxTurnAngle) {
+      this.currentTurnRate = Math.min(
+        this.maxTurnRate,
+        this.currentTurnRate + this.turnAcceleration * deltaTime
+      );
 
-    // Add angular velocity for realistic rotation
-    this.angularVelocity.y += this.currentTurnRate * deltaTime * 0.5;
+      // Add angular velocity for realistic rotation
+      this.angularVelocity.y += this.currentTurnRate * deltaTime * 0.5;
 
-    // Progressive banking
-    this.bankAngle = THREE.MathUtils.lerp(
-      this.bankAngle,
-      -this.maxBankAngle,
-      deltaTime * 4
-    );
-    this.mesh.rotation.z = this.bankAngle;
+      // Update current turn angle (tracks actual plane heading)
+      const turnAmount = this.currentTurnRate * deltaTime;
+      this.currentTurnAngle = Math.max(
+        this.currentTurnAngle - turnAmount,
+        -this.maxTurnAngle
+      );
+
+      // Progressive banking
+      this.bankAngle = THREE.MathUtils.lerp(
+        this.bankAngle,
+        -this.maxBankAngle,
+        deltaTime * 4
+      );
+      this.mesh.rotation.z = this.bankAngle;
+    } else {
+      // At turn limit - level out the plane while button is held
+      this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, 0, deltaTime * 4);
+      this.mesh.rotation.z = this.bankAngle;
+
+      // Also reduce turn rate
+      this.currentTurnRate *= Math.pow(this.turnDamping, deltaTime * 60);
+    }
   }
 
   steerRight(deltaTime) {
-    this.currentTurnRate = Math.min(
-      this.maxTurnRate,
-      this.currentTurnRate + this.turnAcceleration * deltaTime
-    );
+    // Check if we can turn right (haven't reached max right turn angle)
+    if (this.currentTurnAngle < this.maxTurnAngle) {
+      this.currentTurnRate = Math.min(
+        this.maxTurnRate,
+        this.currentTurnRate + this.turnAcceleration * deltaTime
+      );
 
-    this.angularVelocity.y -= this.currentTurnRate * deltaTime * 0.5;
+      this.angularVelocity.y -= this.currentTurnRate * deltaTime * 0.5;
 
-    this.bankAngle = THREE.MathUtils.lerp(
-      this.bankAngle,
-      this.maxBankAngle,
-      deltaTime * 4
-    );
-    this.mesh.rotation.z = this.bankAngle;
-  }
+      // Update current turn angle (tracks actual plane heading)
+      const turnAmount = this.currentTurnRate * deltaTime;
+      this.currentTurnAngle = Math.min(
+        this.currentTurnAngle + turnAmount,
+        this.maxTurnAngle
+      );
 
-  climbUp(deltaTime) {
-    this.mesh.position.y += this.steerSpeed * deltaTime;
-    this.angularVelocity.x -= 1.5 * deltaTime;
-    this.pitchAngle = Math.max(
-      -this.maxPitchAngle,
-      this.pitchAngle - 3 * deltaTime
-    );
-    this.mesh.rotation.x = this.pitchAngle;
-  }
+      this.bankAngle = THREE.MathUtils.lerp(
+        this.bankAngle,
+        this.maxBankAngle,
+        deltaTime * 4
+      );
+      this.mesh.rotation.z = this.bankAngle;
+    } else {
+      // At turn limit - level out the plane while button is held
+      this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, 0, deltaTime * 4);
+      this.mesh.rotation.z = this.bankAngle;
 
-  climbDown(deltaTime) {
-    this.mesh.position.y -= this.steerSpeed * deltaTime;
-    this.angularVelocity.x += 1.5 * deltaTime;
-    this.pitchAngle = Math.min(
-      this.maxPitchAngle,
-      this.pitchAngle + 3 * deltaTime
-    );
-    this.mesh.rotation.x = this.pitchAngle;
+      // Also reduce turn rate
+      this.currentTurnRate *= Math.pow(this.turnDamping, deltaTime * 60);
+    }
   }
 
   stabilize(deltaTime) {
     // Gradual stabilization
-    this.currentTurnRate *= this.turnDamping;
+    const frameEquivalentDt = deltaTime * 60;
+    const turnDampingFactor = Math.pow(this.turnDamping, frameEquivalentDt);
+    this.currentTurnRate *= turnDampingFactor;
 
-    // Return to level flight
+    // DON'T reset turn angle - it tracks actual plane heading
+    // The plane maintains its current direction when controls are released
+
+    // Return to level flight (banking only)
     this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, 0, deltaTime * 3);
     this.mesh.rotation.z = this.bankAngle;
 
@@ -660,23 +560,128 @@ export class Player {
   // Afterburner control
   toggleAfterburner() {
     this.afterburner = !this.afterburner;
-    this.targetThrust = this.afterburner ? 1.5 : 0.8;
+    this.targetThrust = this.afterburner ? 1.5 : 1.0;
   }
 
-  clampPosition() {
-    const terrainHeight = this.getTerrainHeightAtPosition();
-    const minSafeAltitude = terrainHeight + 80;
+  // Laser firing system
+  fireLasers() {
+    if (!this.mesh) return;
 
-    if (this.mesh.position.y < minSafeAltitude) {
-      this.mesh.position.y = minSafeAltitude;
-      this.angularVelocity.y = Math.max(0, this.angularVelocity.y);
-    }
+    const currentTime = Date.now();
+    if (currentTime - this.lastLaserTime < this.laserCooldown) return;
 
-    // High altitude limit
-    if (this.mesh.position.y > 3000) {
-      this.mesh.position.y = 3000;
+    this.lastLaserTime = currentTime;
+
+    // Get plane's forward direction
+    const forward = new THREE.Vector3(0, 0, 1);
+    forward.applyQuaternion(this.mesh.quaternion);
+
+    // Laser spawn positions (from wings)
+    const laserPositions = [
+      new THREE.Vector3(-40, -5, 20), // Left wing
+      new THREE.Vector3(40, -5, 20), // Right wing
+    ];
+
+    laserPositions.forEach((localPos) => {
+      // Transform local position to world position
+      const worldPos = localPos.clone();
+      worldPos.applyMatrix4(this.mesh.matrixWorld);
+
+      this.createLaser(worldPos, forward.clone());
+    });
+  }
+
+  createLaser(position, direction) {
+    const laserLength = 300; // Much longer lasers
+
+    // Core laser beam using cylinder geometry
+    const coreGeometry = new THREE.CylinderGeometry(3, 3, laserLength, 80);
+    const coreMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ff00, // Bright green
+      transparent: true,
+      opacity: 1.0,
+      emissive: 0x00ff00,
+      emissiveIntensity: 0.8,
+      metalness: 0,
+      roughness: 1,
+    });
+    const core = new THREE.Mesh(coreGeometry, coreMaterial);
+
+    // Outer glow using larger cylinder
+    const glowGeometry = new THREE.CylinderGeometry(5, 5, laserLength, 80);
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.3,
+      emissive: 0x00ff00,
+      emissiveIntensity: 0.2,
+      blending: THREE.AdditiveBlending,
+      metalness: 0,
+      roughness: 1,
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+
+    // Position and orient both cylinders
+    core.position.copy(position);
+    glow.position.copy(position);
+
+    // Orient cylinders along the direction vector
+    const up = new THREE.Vector3(0, 1, 0);
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(up, direction.normalize());
+
+    core.quaternion.copy(quaternion);
+    glow.quaternion.copy(quaternion);
+
+    // Laser projectile data
+    const laserData = {
+      mesh: core,
+      glow: glow,
+      position: position.clone(),
+      direction: direction.clone().normalize(),
+      velocity: direction.clone().normalize().multiplyScalar(this.laserSpeed),
+      life: 3000, // 3 seconds lifetime
+      creationTime: Date.now(),
+    };
+
+    this.lasers.push(laserData);
+    this.scene.add(core);
+    this.scene.add(glow);
+  }
+
+  updateLasers(deltaTime) {
+    const currentTime = Date.now();
+
+    // Update laser positions and remove expired lasers
+    for (let i = this.lasers.length - 1; i >= 0; i--) {
+      const laser = this.lasers[i];
+
+      // Check if laser has expired
+      if (currentTime - laser.creationTime > laser.life) {
+        this.scene.remove(laser.mesh);
+        this.scene.remove(laser.glow);
+        laser.mesh.geometry.dispose();
+        laser.mesh.material.dispose();
+        laser.glow.geometry.dispose();
+        laser.glow.material.dispose();
+        this.lasers.splice(i, 1);
+        continue;
+      }
+
+      // Move laser forward
+      laser.position.add(laser.velocity.clone().multiplyScalar(deltaTime));
+
+      // Update laser and glow positions
+      laser.mesh.position.copy(laser.position);
+      laser.glow.position.copy(laser.position);
+
+      // Add slight pulsing effect to make it more visible
+      const pulse = 1 + Math.sin(currentTime * 0.01) * 0.2;
+      laser.mesh.material.emissiveIntensity = 0.8 * pulse;
+      laser.glow.material.opacity = 0.3 * pulse;
     }
   }
+
 
   getTerrainHeightAtPosition(x = null, z = null) {
     if (

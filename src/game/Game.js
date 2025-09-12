@@ -6,7 +6,11 @@ import { InputManager } from "./InputManager.js";
 import { HUD } from "./HUD.js";
 import { Skybox } from "./Skybox.js";
 import { LensFlare } from "./LensFlare.js";
-import { ReflectiveWater } from "./ReflectiveWater.js";
+import { TransparentWater } from "./TransparantWater.js";
+import Stats from "three/examples/jsm/libs/stats.module.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
 export class Game {
   constructor() {
@@ -24,6 +28,16 @@ export class Game {
     this.isRunning = false;
     this.gameStarted = false;
     this.menuCameraAngle = 0;
+    this.water = null;
+
+    // FPS Stats monitor
+    this.stats = new Stats();
+    this.stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
+    document.body.appendChild(this.stats.dom);
+
+    // Post-processing
+    this.composer = null;
+    this.bloomPass = null;
 
     // Static daylight - no day/night cycle
     this.dayTime = 0.5; // Fixed at noon for bright daylight
@@ -33,7 +47,9 @@ export class Game {
   init() {
     this.setupRenderer();
     this.setupScene();
+
     this.setupCamera();
+    this.setupPostProcessing();
 
     // Create terrain with camera reference
     this.terrain = new ChunkTerrain(this.scene, this.camera);
@@ -54,13 +70,14 @@ export class Game {
     console.log("✨ Lens flare system initialized");
 
     // Create reflective water system after lighting
-    this.water = new ReflectiveWater(this.scene, this.renderer, this.camera);
-    // Water will initialize async including loading normal map
-    this.water.init().then(() => {
-      if (this.water.setClearWater) {
-        this.water.setClearWater(); // Start with clear water
-      }
-    });
+    // this.water = new ReflectiveWater(this.scene, this.renderer, this.camera);
+    // // Water will initialize async including loading normal map
+    // this.water.init().then(() => {
+    //   if (this.water.setClearWater) {
+    //     this.water.setClearWater(); // Start with clear water
+    //   }
+    // });
+    this.setupWater();
 
     // Don't create input manager until game starts
 
@@ -74,6 +91,7 @@ export class Game {
       antialias: true,
       alpha: true,
       powerPreference: "high-performance",
+      logarithmicDepthBuffer: true,
     });
 
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -99,18 +117,65 @@ export class Game {
 
   setupScene() {
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x000511, 12000, 160000); // Extended fog for larger draw distance
+    // Use exponential fog for smooth sky blending
+    this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.00008);
   }
 
   setupCamera() {
     this.camera = new THREE.PerspectiveCamera(
       65, // Slightly wider field of view for better visibility
       window.innerWidth / window.innerHeight,
-      1,
-      200000 // Extended ultra-distance viewing - nearly doubled
+      0.1, // Closer near plane for better precision
+      500000 // Even further with logarithmic depth buffer
     );
     this.camera.position.set(0, 200, 200); // Lower and forward position
     this.camera.lookAt(0, 0, 0);
+  }
+
+  setupPostProcessing() {
+    // Create effect composer for post-processing
+    this.composer = new EffectComposer(this.renderer);
+    
+    // Add render pass
+    const renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(renderPass);
+    
+    // Add bloom pass for glowing effects
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.5, // strength
+      0.4, // radius  
+      0.85 // threshold
+    );
+    
+    this.composer.addPass(this.bloomPass);
+    
+    console.log("✨ Bloom post-processing initialized");
+  }
+
+  setupWater() {
+    const waterGeometry = new THREE.PlaneGeometry(20000, 20000);
+
+    const water = new TransparentWater(waterGeometry, {
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals: new THREE.TextureLoader().load(
+        "waternormals.jpg",
+        (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        }
+      ),
+      side: THREE.DoubleSide,
+      distortionScale: 3.7,
+      sunColor: 0x131818,
+      baseColor: 0x232f2f,
+      waterColor: 0x85888d,
+      fog: this.scene.fog !== undefined,
+    });
+
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = 200; // Slightly lowered water level for better terrain visibility
+    this.scene.add(water);
   }
 
   setupLighting() {
@@ -123,11 +188,9 @@ export class Game {
 
     console.log("🌞 Multi-directional lighting setup complete");
 
-    // Update scene fog to complement skybox
+    // Update exponential fog to complement skybox
     this.scene.fog.color.setHex(0x87ceeb); // Sky blue fog to match skybox
-    this.scene.fog.density = 0.0000000005; // Reduced fog density for clearer distance view
-    this.scene.fog.near = 12000; // Push fog start further away
-    this.scene.fog.far = 70000; // Double the fog distance
+    this.scene.fog.density = 0.00004; // Adjust density for smooth transition
 
     // Set renderer clear color to match sky
     this.renderer.setClearColor(0x87ceeb, 1); // Sky blue background
@@ -157,7 +220,7 @@ export class Game {
     this.shadowCameraHelper = new THREE.CameraHelper(
       this.sunLight.shadow.camera
     );
-    this.scene.add(this.shadowCameraHelper);
+    //this.scene.add(this.shadowCameraHelper);
 
     // Secondary fill light - no shadows to reduce complexity
     this.fillLight = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -268,7 +331,6 @@ export class Game {
       }
     };
 
-
     this.animate();
   }
 
@@ -284,12 +346,16 @@ export class Game {
   animate() {
     if (!this.isRunning) return;
 
+    this.stats.begin();
+
     requestAnimationFrame(this.animate.bind(this));
 
     const deltaTime = this.clock.getDelta();
 
     this.update(deltaTime);
     this.render();
+
+    this.stats.end();
   }
 
   update(deltaTime) {
@@ -322,7 +388,7 @@ export class Game {
 
       // Update water in menu phase too
       if (this.water) {
-        this.water.update(deltaTime, this.camera);
+        //this.water.update(deltaTime, this.camera);
       }
 
       return;
@@ -347,7 +413,7 @@ export class Game {
 
     // Update water
     if (this.water) {
-      this.water.update(deltaTime, this.camera);
+      //this.water.update(deltaTime, this.camera);
     }
 
     // Static daylight - no updates needed
@@ -376,9 +442,9 @@ export class Game {
     const playerZ = this.player.position.z;
 
     this.sunLight.position.set(
-      -4000 + this.player.position.x,
+      5000 + this.player.position.x,
       2000,
-      -200 + this.player.position.z
+      -2000 + this.player.position.z
     );
 
     // Update shadow camera target to follow player (keep same light direction)
@@ -393,13 +459,23 @@ export class Game {
   }
 
   render() {
-    // Simple render - no complex reflections
-    this.renderer.render(this.scene, this.camera);
+    // Use post-processing composer for bloom effects
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      // Fallback to direct rendering
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   onWindowResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    // Update composer size for post-processing
+    if (this.composer) {
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    }
   }
 }

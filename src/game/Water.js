@@ -18,7 +18,7 @@ export class Water {
     this.clipPlane = new THREE.Vector4();
 
     // Water properties
-    this.seaLevel = 40; // Height where water appears (matches terrain color levels)
+    this.seaLevel = 400; // Height where water appears (matches terrain color levels)
     this.waterSize = 5000; // Reduced water plane size for better scale
 
     this.init();

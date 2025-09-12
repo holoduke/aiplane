@@ -1,5 +1,10 @@
 import * as THREE from "three";
 
+const TERRAIN_TYPES = {
+  NORMAL: 0,
+  SIDE: 1,
+};
+
 export class ChunkTerrain {
   /**
    * @param {THREE.Scene} scene
@@ -10,19 +15,18 @@ export class ChunkTerrain {
     this.camera = camera;
 
     // Data
-    this.heightData = null; // Uint8Array
-    this.metadata = null; // { size:number, maxHeight?:number }
+    this.heightData = []; // Uint8Array
 
     // Streaming / budget
     this.lastPlayerWorld = new THREE.Vector3(Infinity, 0, Infinity);
-    this.maxChunksPerFrame = 6; // Increased for faster initial loading
+    this.maxChunksPerFrame = 12; // Increased for faster chunk replacement
 
     // LOD rings (near → far). Ensure complete coverage around player
     this.lods = [
-      { id: 0, maxRange: 3, chunkSize: 400, resolution: 65, skirtDepth: 0 }, // High detail close - increased range
-      { id: 1, maxRange: 8, chunkSize: 800, resolution: 33, skirtDepth: 0 }, // Medium detail
-      { id: 2, maxRange: 15, chunkSize: 1600, resolution: 17, skirtDepth: 0 }, // Lower detail
-      { id: 3, maxRange: 25, chunkSize: 3200, resolution: 9, skirtDepth: 0 }, // Lowest detail far
+      { id: 0, maxRange: 7, chunkSize: 400, resolution: 65, skirtDepth: 0 }, // High detail close - increased range
+      { id: 1, maxRange: 9, chunkSize: 800, resolution: 55, skirtDepth: 0 }, // Medium detail
+      { id: 2, maxRange: 13, chunkSize: 1600, resolution: 45, skirtDepth: 0 }, // Lower detail
+      { id: 3, maxRange: 16, chunkSize: 3200, resolution: 9, skirtDepth: 0 }, // Lowest detail far
     ];
 
     this.maxRenderDistance =
@@ -35,7 +39,7 @@ export class ChunkTerrain {
     this.materials = new Map(); // lodId -> MeshStandardMaterial
 
     // Heightmap tiling
-    this.heightmapTileSize = 4000;
+    this.heightmapTileSize = 5000;
 
     // Scratch
     this._tmpFrustum = new THREE.Frustum();
@@ -56,7 +60,16 @@ export class ChunkTerrain {
     console.log("✅ Materials created for all LOD levels");
 
     try {
-      await this.loadHeightmapData();
+      this.heightData[TERRAIN_TYPES.NORMAL] = await this.loadHeightmapData(
+        "heightmap33.jpg",
+        700,
+        512
+      );
+      this.heightData[TERRAIN_TYPES.SIDE] = await this.loadHeightmapData(
+        "heightmap34.jpg",
+        1300,
+        512
+      );
       console.log("✅ LOD terrain ready with heightmap");
       this.terrainReady = true; // Mark terrain as ready for chunk generation
     } catch (e) {
@@ -66,22 +79,28 @@ export class ChunkTerrain {
     }
   }
 
-  async loadHeightmapData() {
-    const metaResponse = await fetch("/heightmaps/heightmap-info.json");
-    if (!metaResponse.ok) throw new Error("Could not load heightmap metadata");
-    this.metadata = await metaResponse.json();
+  async loadHeightmapData(filename, maxHeight, heightMapSize) {
+    // Try different heightmap formats
+    const data = {};
+    let heightmapData = null;
 
-    const heightmapResponse = await fetch("/heightmaps/heightmap.bmp");
-    if (!heightmapResponse.ok) throw new Error("Could not load heightmap file");
+    const response = await fetch(`/heightmaps/${filename}`);
+    console.log(response);
+    if (response.ok) {
+      const arrayBuffer = await response.arrayBuffer();
+      const result = await this.parseHeightmapFile(arrayBuffer, filename);
+      if (result) {
+        heightmapData = result.data;
+        data["metadata"] = { maxHeight: maxHeight, size: heightMapSize };
+      }
+    }
 
-    const arrayBuffer = await heightmapResponse.arrayBuffer();
-    this.heightData = this.parsePGM(arrayBuffer);
-
-    console.log(
-      `📊 Heightmap: ${this.metadata.size}x${this.metadata.size}, maxHeight=${
-        this.metadata.maxHeight ?? 700
-      }`
-    );
+    if (!heightmapData) {
+      throw new Error("No valid heightmap found in supported formats");
+    }
+    data["data"] = heightmapData;
+    console.log(`✅ Heightmap loaded: ${data}`, data);
+    return data;
   }
 
   // Call every frame
@@ -94,16 +113,8 @@ export class ChunkTerrain {
 
     const playerWorld = this._toVector3(playerPosition);
 
-    const moveThreshold = 50; // meters
+    const moveThreshold = 200; // meters - further increased to reduce updates
     const isFirstUpdate = !isFinite(this.lastPlayerWorld.x);
-
-    // console.log(
-    //   `🌍 Terrain update: player at (${playerWorld.x.toFixed(
-    //     0
-    //   )}, ${playerWorld.z.toFixed(0)}), isFirst=${isFirstUpdate}, chunks=${
-    //     this.chunks.size
-    //   }`
-    // );
 
     if (
       isFirstUpdate ||
@@ -121,10 +132,7 @@ export class ChunkTerrain {
 
       // Force immediate generation of all chunks on first update
       if (isFirstUpdate) {
-        this.maxChunksPerFrame = 500; // Generate all chunks immediately (enough for all LODs)
-        // console.log(
-        //   `🚀 First terrain update: generating ${this.maxChunksPerFrame} chunks per frame`
-        // );
+        this.maxChunksPerFrame = 10; // Generate all chunks immediately (enough for all LODs)
       } else {
         this.maxChunksPerFrame = 6; // Back to normal rate
       }
@@ -149,34 +157,100 @@ export class ChunkTerrain {
     return new THREE.Vector3(x, y, z);
   }
 
-  parsePGM(arrayBuffer) {
-    const data = new Uint8Array(arrayBuffer);
-    let headerEnd = 0,
-      newline = 0;
-    for (let i = 0; i < data.length; i++) {
-      if (data[i] === 10) {
-        // '\n'
-        if (++newline === 3) {
-          headerEnd = i + 1;
-          break;
-        }
-      }
+  async parseHeightmapFile(arrayBuffer, filename) {
+    const extension = filename.split(".").pop().toLowerCase();
+
+    switch (extension) {
+      case "jpg":
+      case "jpeg":
+      case "png":
+        return await this.parseImageFile(arrayBuffer, extension);
+      default:
+        return null;
     }
-    return data.slice(headerEnd); // raw 8-bit pixels
   }
 
-  getHeightAtPosition(worldX, worldZ) {
-    if (!this.heightData || !this.metadata) {
-      // console.log(
-      //   `⚠️ Using procedural heights at (${worldX.toFixed(0)}, ${worldZ.toFixed(
-      //     0
-      //   )}) - heightmap not loaded yet`
-      // );
-      // Procedural fallback
-      let h = 50;
-      h += Math.sin(worldX * 0.001) * Math.cos(worldZ * 0.001) * 100;
-      h += Math.sin(worldX * 0.003) * Math.sin(worldZ * 0.003) * 30;
-      return Math.max(0, Math.min(500, h));
+  async parseImageFile(arrayBuffer, extension) {
+    // For JPG/PNG, we need to use Canvas to extract pixel data
+    return new Promise((resolve, reject) => {
+      const mimeType =
+        extension === "jpg" ? "image/jpeg" : `image/${extension}`;
+      const blob = new Blob([arrayBuffer], { type: mimeType });
+      const img = new Image();
+
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+          canvas.width = img.width;
+          canvas.height = img.height;
+
+          // Clear canvas and draw image
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+
+          const imageData = ctx.getImageData(0, 0, img.width, img.height);
+          const pixels = imageData.data;
+
+          console.log(
+            `🖼️ Image loaded: ${img.width}x${img.height}, ${pixels.length} bytes`
+          );
+
+          // Convert RGBA to grayscale using luminance formula
+          const grayscale = new Uint8Array(img.width * img.height);
+          for (let i = 0; i < pixels.length; i += 4) {
+            // Use standard luminance conversion
+            const gray = Math.round(
+              pixels[i] * 0.2126 +
+                pixels[i + 1] * 0.7152 +
+                pixels[i + 2] * 0.0722
+            );
+            grayscale[i / 4] = gray;
+          }
+
+          // Clean up
+          URL.revokeObjectURL(img.src);
+
+          resolve({
+            data: grayscale,
+            metadata: {
+              size: Math.min(img.width, img.height),
+              maxHeight: 700,
+              format: extension,
+            },
+            format: extension,
+          });
+        } catch (error) {
+          console.error("Canvas processing error:", error);
+          URL.revokeObjectURL(img.src);
+          resolve(null);
+        }
+      };
+
+      img.onerror = (error) => {
+        console.error("Image load error:", error);
+        URL.revokeObjectURL(img.src);
+        resolve(null);
+      };
+
+      img.crossOrigin = "anonymous"; // Handle CORS if needed
+      img.src = URL.createObjectURL(blob);
+    });
+  }
+
+  getHeightAtPosition(worldX, worldZ, useInterpolation = false) {
+    //if terrain
+    let terrainType = TERRAIN_TYPES.NORMAL;
+
+    if (worldX > 5000) terrainType = TERRAIN_TYPES.SIDE;
+    if (worldX < -5000) terrainType = TERRAIN_TYPES.SIDE;
+
+    if (
+      !this.heightData[terrainType] ||
+      !this.heightData[terrainType].metadata
+    ) {
+      return 0;
     }
 
     // Infinite tiling with actual heightmap data
@@ -185,14 +259,45 @@ export class ChunkTerrain {
     if (u < 0) u += 1;
     if (v < 0) v += 1;
 
-    const size = this.metadata.size;
-    const px = Math.floor(u * (size - 1));
-    const py = Math.floor(v * (size - 1));
-    const idx = py * size + px;
-    const value = this.heightData[idx] ?? 0;
-    const height = (value / 255) * (this.metadata.maxHeight || 700);
+    const size = this.heightData[terrainType].metadata.size;
 
-    return height;
+    if (useInterpolation) {
+      // Use bilinear interpolation for high-detail terrain (LOD 0 only)
+      const fx = u * (size - 1);
+      const fy = v * (size - 1);
+
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const x1 = Math.min(x0 + 1, size - 1);
+      const y1 = Math.min(y0 + 1, size - 1);
+
+      const dx = fx - x0;
+      const dy = fy - y0;
+
+      // Sample four corners
+      const h00 = this.heightData[terrainType].data[y0 * size + x0] ?? 0;
+      const h10 = this.heightData[terrainType].data[y0 * size + x1] ?? 0;
+      const h01 = this.heightData[terrainType].data[y1 * size + x0] ?? 0;
+      const h11 = this.heightData[terrainType].data[y1 * size + x1] ?? 0;
+
+      // Bilinear interpolation
+      const h0 = h00 * (1 - dx) + h10 * dx;
+      const h1 = h01 * (1 - dx) + h11 * dx;
+      const value = h0 * (1 - dy) + h1 * dy;
+
+      const height =
+        (value / 255) * this.heightData[terrainType].metadata.maxHeight;
+      return height;
+    } else {
+      // Fast nearest-neighbor sampling for distant terrain
+      const px = Math.floor(u * (size - 1));
+      const py = Math.floor(v * (size - 1));
+      const idx = py * size + px;
+      const value = this.heightData[terrainType].data[idx] ?? 0;
+      const height =
+        (value / 255) * this.heightData[terrainType].metadata.maxHeight;
+      return height;
+    }
   }
 
   setVertexColor(colors, vertexIndex, height) {
@@ -263,9 +368,10 @@ export class ChunkTerrain {
       //   `🎯 LOD${lod.id}: size=${lodSize}, center=(${lodCx},${lodCz}), maxRange=${lod.maxRange}`
       // );
 
-      // Generate chunks in a square around player within LOD range
-      for (let x = lodCx - lod.maxRange; x <= lodCx + lod.maxRange; x++) {
-        for (let z = lodCz - lod.maxRange; z <= lodCz + lod.maxRange; z++) {
+      // Generate chunks in a square around player within LOD range (reduced by 1 to prevent edge flickering)
+      const effectiveRange = lod.maxRange - 1;
+      for (let x = lodCx - effectiveRange; x <= lodCx + effectiveRange; x++) {
+        for (let z = lodCz - effectiveRange; z <= lodCz + effectiveRange; z++) {
           const key = this.keyFor(lod.id, x, z);
           if (this.chunks.has(key)) {
             continue;
@@ -277,20 +383,21 @@ export class ChunkTerrain {
             (centerX - playerWorld.x) ** 2 + (centerZ - playerWorld.z) ** 2
           );
 
-          // Check if this chunk should use this LOD level
-          let shouldUseLOD = true;
+          // Determine the best LOD for this distance
+          let bestLodIndex = this.lods.length - 1; // Default to lowest detail
 
-          // For LOD 0, always use if within range
-          if (lod.id === 0) {
-            shouldUseLOD = distanceToPlayer <= lod.maxRange * lodSize;
-          } else {
-            // For higher LODs, only use if beyond previous LOD's range
-            const prevLod = this.lods[lodIndex - 1];
-            const minDist = prevLod.maxRange * prevLod.chunkSize;
-            const maxDist = lod.maxRange * lodSize;
-            shouldUseLOD =
-              distanceToPlayer > minDist && distanceToPlayer <= maxDist;
+          // Find the highest detail LOD that can handle this distance
+          for (let i = 0; i < this.lods.length; i++) {
+            const testLod = this.lods[i];
+            const maxDistForLod = testLod.maxRange * testLod.chunkSize;
+            if (distanceToPlayer <= maxDistForLod) {
+              bestLodIndex = i;
+              break;
+            }
           }
+
+          // Only use this LOD if it's the best match for this distance
+          const shouldUseLOD = lodIndex === bestLodIndex;
 
           if (shouldUseLOD) {
             // console.log(
@@ -313,16 +420,6 @@ export class ChunkTerrain {
 
     queue.sort((a, b) => a.priority - b.priority);
     this.chunksToGenerate = queue;
-
-    //console.log(`📋 Queued ${queue.length} chunks total across all LODs`);
-    for (let i = 0; i < Math.min(10, queue.length); i++) {
-      const q = queue[i];
-      // console.log(
-      //   `  ${i + 1}. LOD${q.lod} chunk (${q.cx},${
-      //     q.cz
-      //   }) priority=${q.priority.toFixed(0)}m`
-      // );
-    }
   }
 
   processQueue() {
@@ -339,15 +436,67 @@ export class ChunkTerrain {
 
   unloadFar(playerWorld) {
     const toRemove = [];
+
+    // Create set of pending chunk positions for quick lookup
+    const pendingChunks = new Set();
+    for (const job of this.chunksToGenerate) {
+      pendingChunks.add(`${job.cx},${job.cz}`);
+    }
+
     for (const [key, c] of this.chunks.entries()) {
       const centerX = (c.cx + 0.5) * c.size;
       const centerZ = (c.cz + 0.5) * c.size;
-      const dx = Math.abs(centerX - playerWorld.x);
-      const dz = Math.abs(centerZ - playerWorld.z);
-      const cheb = Math.max(dx, dz);
-      const maxDistWithBuffer = this.maxRenderDistance + c.size;
-      if (cheb > maxDistWithBuffer) toRemove.push(key);
+      const distance = Math.sqrt(
+        (centerX - playerWorld.x) ** 2 + (centerZ - playerWorld.z) ** 2
+      );
+
+      // Remove if too far away (with large buffer to prevent flickering)
+      const maxDistWithBuffer = this.maxRenderDistance + c.size * 3; // Tripled buffer
+      if (distance > maxDistWithBuffer) {
+        toRemove.push(key);
+        continue;
+      }
+
+      // Check if wrong LOD level for current distance
+      let bestLodIndex = this.lods.length - 1;
+      for (let i = 0; i < this.lods.length; i++) {
+        const testLod = this.lods[i];
+        const maxDistForLod = testLod.maxRange * testLod.chunkSize;
+        if (distance <= maxDistForLod) {
+          bestLodIndex = i;
+          break;
+        }
+      }
+
+      // Skip LOD-based removal when using single LOD level
+      if (this.lods.length > 1) {
+        // Check if chunk should be at different LOD level with hysteresis
+        const currentLod = this.lods[c.lod];
+        const currentMaxDist = currentLod.maxRange * currentLod.chunkSize;
+        const hysteresis = c.size * 0.75; // 75% of chunk size as hysteresis buffer
+
+        let shouldRemove = false;
+
+        if (bestLodIndex > c.lod) {
+          // Should be lower detail - only remove if well beyond current LOD range
+          shouldRemove = distance > currentMaxDist + hysteresis;
+        } else if (bestLodIndex < c.lod) {
+          // Should be higher detail - only remove if well within higher LOD range
+          const higherLod = this.lods[bestLodIndex];
+          const higherMaxDist = higherLod.maxRange * higherLod.chunkSize;
+          shouldRemove = distance < higherMaxDist - hysteresis;
+        }
+
+        if (shouldRemove) {
+          const chunkPos = `${c.cx},${c.cz}`;
+          // Only remove if there's no pending replacement chunk for this position
+          if (!pendingChunks.has(chunkPos)) {
+            toRemove.push(key);
+          }
+        }
+      }
     }
+
     for (const k of toRemove) {
       const c = this.chunks.get(k);
       if (!c) continue;
@@ -382,7 +531,7 @@ export class ChunkTerrain {
         const worldX = cx * size + localX;
         const worldZ = cz * size + localZ;
 
-        const height = this.getHeightAtPosition(worldX, worldZ);
+        const height = this.getHeightAtPosition(worldX, worldZ, lodIndex === 0);
         pos[v * 3 + 2] = height; // Z up (after rotation)
         this.setVertexColor(colors, v, height);
         avgHeight += height;
@@ -418,13 +567,5 @@ export class ChunkTerrain {
 
     this.scene.add(mesh);
     this.chunks.set(chunk.key, chunk);
-
-    // console.log(
-    //   `✅ Built LOD${
-    //     lod.id
-    //   } chunk (${cx},${cz}) at world pos (${mesh.position.x.toFixed(
-    //     0
-    //   )}, ${mesh.position.z.toFixed(0)}) avgHeight=${avgHeight.toFixed(0)}m`
-    // );
   }
 }
