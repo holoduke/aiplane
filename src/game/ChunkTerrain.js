@@ -19,14 +19,18 @@ export class ChunkTerrain {
 
     // Streaming / budget
     this.lastPlayerWorld = new THREE.Vector3(Infinity, 0, Infinity);
-    this.maxChunksPerFrame = 12; // Increased for faster chunk replacement
+    this.maxChunksPerFrame = 8; // Reduced for better frame rate
+
+    // Performance optimizations
+    this.geometryCache = new Map(); // Cache geometries to avoid recreation
+    this.materialPool = new Map(); // Shared materials pool
 
     // LOD rings (near → far). Ensure complete coverage around player
     this.lods = [
-      { id: 0, maxRange: 7, chunkSize: 400, resolution: 65, skirtDepth: 0 }, // High detail close - increased range
-      { id: 1, maxRange: 9, chunkSize: 800, resolution: 55, skirtDepth: 0 }, // Medium detail
-      { id: 2, maxRange: 13, chunkSize: 1600, resolution: 45, skirtDepth: 0 }, // Lower detail
-      { id: 3, maxRange: 16, chunkSize: 3200, resolution: 9, skirtDepth: 0 }, // Lowest detail far
+      { id: 0, maxRange: 9, chunkSize: 400, resolution: 45, skirtDepth: 0 }, // High detail close - increased range
+      { id: 1, maxRange: 11, chunkSize: 800, resolution: 40, skirtDepth: 0 }, // Medium detail
+      { id: 2, maxRange: 13, chunkSize: 1600, resolution: 25, skirtDepth: 0 }, // Lower detail
+      { id: 3, maxRange: 26, chunkSize: 3200, resolution: 5, skirtDepth: 0 }, // Lowest detail far
     ];
 
     this.maxRenderDistance =
@@ -39,7 +43,7 @@ export class ChunkTerrain {
     this.materials = new Map(); // lodId -> MeshStandardMaterial
 
     // Heightmap tiling
-    this.heightmapTileSize = 5000;
+    this.heightmapTileSize = 5120;
 
     // Scratch
     this._tmpFrustum = new THREE.Frustum();
@@ -55,7 +59,7 @@ export class ChunkTerrain {
   async init() {
     // Create materials immediately (don't wait for heightmap)
     for (const lod of this.lods) {
-      this.materials.set(lod.id, this.makeMaterial());
+      this.materials.set(lod.id, this.makeMaterial(lod.id));
     }
     console.log("✅ Materials created for all LOD levels");
 
@@ -113,7 +117,29 @@ export class ChunkTerrain {
 
     const playerWorld = this._toVector3(playerPosition);
 
-    const moveThreshold = 200; // meters - further increased to reduce updates
+    // Dynamic update threshold based on player speed
+    let moveThreshold = 200; // Base threshold
+    let maxChunksPerFrame = 6; // Base generation rate
+    
+    if (window.game && window.game.player) {
+      const playerSpeed = window.game.player.forwardSpeed;
+      
+      // Adjust thresholds based on speed
+      if (playerSpeed > 6000) {
+        // Very high speed - moderate generation
+        moveThreshold = 180;
+        maxChunksPerFrame = 8;
+      } else if (playerSpeed > 4000) {
+        // High speed - slightly increased generation  
+        moveThreshold = 200;
+        maxChunksPerFrame = 6;
+      } else if (playerSpeed > 2000) {
+        // Medium speed
+        moveThreshold = 220;
+        maxChunksPerFrame = 4;
+      }
+    }
+    
     const isFirstUpdate = !isFinite(this.lastPlayerWorld.x);
 
     if (
@@ -121,30 +147,42 @@ export class ChunkTerrain {
       playerWorld.distanceToSquared(this.lastPlayerWorld) >
         moveThreshold * moveThreshold
     ) {
-      // console.log(
-      //   `🔄 Triggering terrain rebuild: moved ${Math.sqrt(
-      //     playerWorld.distanceToSquared(this.lastPlayerWorld)
-      //   ).toFixed(0)}m`
-      // );
       this.lastPlayerWorld.copy(playerWorld);
       this.buildQueue(playerWorld);
       this.unloadFar(playerWorld);
+      
+      // Only run culling every few updates to reduce overhead
+      if (!this._cullCounter) this._cullCounter = 0;
+      this._cullCounter++;
+      if (this._cullCounter % 3 === 0) { // Every 3rd update
+        this.cullInvisibleChunks(playerWorld);
+      }
 
-      // Force immediate generation of all chunks on first update
+      // Set adaptive generation rate
       if (isFirstUpdate) {
-        this.maxChunksPerFrame = 10; // Generate all chunks immediately (enough for all LODs)
+        this.maxChunksPerFrame = 16; // More on first load
       } else {
-        this.maxChunksPerFrame = 6; // Back to normal rate
+        this.maxChunksPerFrame = maxChunksPerFrame;
       }
     }
     this.processQueue();
   }
 
   cleanup() {
+    // Clean up chunks
     for (const c of this.chunks.values()) this._destroyChunk(c);
     this.chunks.clear();
+
+    // Clean up materials
     this.materials.forEach((m) => m.dispose());
     this.materials.clear();
+
+    // Clean up cached resources
+    this.materialPool.forEach((m) => m.dispose());
+    this.materialPool.clear();
+
+    this.geometryCache.forEach((g) => g.dispose());
+    this.geometryCache.clear();
   }
 
   // ---------- internals ----------
@@ -333,15 +371,26 @@ export class ChunkTerrain {
     }
   }
 
-  makeMaterial() {
+  makeMaterial(lodId) {
+    // Use cached material if available
+    const cacheKey = `lod_${lodId}`;
+    if (this.materialPool.has(cacheKey)) {
+      return this.materialPool.get(cacheKey);
+    }
+
     const m = new THREE.MeshStandardMaterial({
       vertexColors: true,
       transparent: false,
       side: THREE.FrontSide,
       roughness: 0.6,
       metalness: 0.3,
+      // Very subtle emissive for slight bloom on snow peaks
+      emissive: new THREE.Color(0x001122), // Very dark blue
+      emissiveIntensity: 0.02, // Very subtle
     });
-    m.needsUpdate = true;
+
+    // Cache the material
+    this.materialPool.set(cacheKey, m);
     return m;
   }
 
@@ -351,11 +400,13 @@ export class ChunkTerrain {
 
   buildQueue(playerWorld) {
     const queue = [];
-    // console.log(
-    //   `🎯 Building queue for player at (${playerWorld.x.toFixed(
-    //     0
-    //   )}, ${playerWorld.z.toFixed(0)})`
-    // );
+    
+    // Get player direction for priority sorting when flying fast
+    let playerForward = null;
+    if (window.game && window.game.player && window.game.player.mesh) {
+      playerForward = new THREE.Vector3(0, 0, 1);
+      playerForward.applyQuaternion(window.game.player.mesh.quaternion);
+    }
 
     // Generate chunks for all LOD levels using proper distance-based selection
     for (let lodIndex = 0; lodIndex < this.lods.length; lodIndex++) {
@@ -364,11 +415,7 @@ export class ChunkTerrain {
       const lodCx = Math.floor(playerWorld.x / lodSize);
       const lodCz = Math.floor(playerWorld.z / lodSize);
 
-      // console.log(
-      //   `🎯 LOD${lod.id}: size=${lodSize}, center=(${lodCx},${lodCz}), maxRange=${lod.maxRange}`
-      // );
-
-      // Generate chunks in a square around player within LOD range (reduced by 1 to prevent edge flickering)
+      // Generate chunks in a square around player within LOD range
       const effectiveRange = lod.maxRange - 1;
       for (let x = lodCx - effectiveRange; x <= lodCx + effectiveRange; x++) {
         for (let z = lodCz - effectiveRange; z <= lodCz + effectiveRange; z++) {
@@ -384,9 +431,7 @@ export class ChunkTerrain {
           );
 
           // Determine the best LOD for this distance
-          let bestLodIndex = this.lods.length - 1; // Default to lowest detail
-
-          // Find the highest detail LOD that can handle this distance
+          let bestLodIndex = this.lods.length - 1;
           for (let i = 0; i < this.lods.length; i++) {
             const testLod = this.lods[i];
             const maxDistForLod = testLod.maxRange * testLod.chunkSize;
@@ -396,21 +441,36 @@ export class ChunkTerrain {
             }
           }
 
-          // Only use this LOD if it's the best match for this distance
           const shouldUseLOD = lodIndex === bestLodIndex;
 
           if (shouldUseLOD) {
-            // console.log(
-            //   `➕ Adding LOD${
-            //     lod.id
-            //   } chunk (${x},${z}) at distance ${distanceToPlayer.toFixed(0)}m`
-            // );
+            let priority = distanceToPlayer;
+            
+            // Boost priority for chunks ahead when flying fast
+            if (playerForward && window.game.player.forwardSpeed > 4000) {
+              // Use direction without creating new vectors
+              const dx = centerX - playerWorld.x;
+              const dz = centerZ - playerWorld.z;
+              const dist = Math.sqrt(dx * dx + dz * dz);
+              
+              if (dist > 0) {
+                const forwardDot = (dx * playerForward.x + dz * playerForward.z) / dist;
+                
+                // Chunks ahead get higher priority (lower value = higher priority)
+                if (forwardDot > 0.3) {
+                  priority *= 0.5; // Much higher priority for forward chunks
+                } else if (forwardDot > 0) {
+                  priority *= 0.8; // Higher priority for somewhat forward chunks
+                }
+              }
+            }
+            
             queue.push({
               key,
               lod: lod.id,
               cx: x,
               cz: z,
-              priority: distanceToPlayer,
+              priority: priority,
               onScreen: true,
             });
           }
@@ -518,26 +578,47 @@ export class ChunkTerrain {
     const size = lod.chunkSize;
     const res = lod.resolution;
 
-    const geom = new THREE.PlaneGeometry(size, size, res - 1, res - 1);
+    // Try to reuse geometry from cache
+    const geomKey = `lod${lodIndex}_${res}`;
+    let geom;
+
+    if (this.geometryCache.has(geomKey)) {
+      // Clone cached geometry for performance
+      const cachedGeom = this.geometryCache.get(geomKey);
+      geom = cachedGeom.clone();
+    } else {
+      // Create new geometry and cache it
+      geom = new THREE.PlaneGeometry(size, size, res - 1, res - 1);
+      this.geometryCache.set(geomKey, geom.clone());
+    }
+
     const pos = geom.attributes.position.array;
 
     const colors = new Float32Array(res * res * 3);
     let v = 0;
     let avgHeight = 0;
-    for (let z = 0; z < res; z++) {
-      for (let x = 0; x < res; x++, v++) {
-        const localX = (x / (res - 1)) * size;
-        const localZ = (z / (res - 1)) * size;
-        const worldX = cx * size + localX;
-        const worldZ = cz * size + localZ;
+    const useInterpolation = lodIndex === 0; // Only use expensive interpolation for highest LOD
+    const sizeInv = 1 / (res - 1); // Pre-compute division
 
-        const height = this.getHeightAtPosition(worldX, worldZ, lodIndex === 0);
+    for (let z = 0; z < res; z++) {
+      const localZ = z * sizeInv * size;
+      const worldZ = cz * size + localZ;
+
+      for (let x = 0; x < res; x++, v++) {
+        const localX = x * sizeInv * size;
+        const worldX = cx * size + localX;
+
+        const height = this.getHeightAtPosition(
+          worldX,
+          worldZ,
+          useInterpolation
+        );
         pos[v * 3 + 2] = height; // Z up (after rotation)
         this.setVertexColor(colors, v, height);
         avgHeight += height;
       }
     }
-    avgHeight /= res * res;
+    avgHeight *= sizeInv * sizeInv; // Faster than division
 
     geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     geom.computeVertexNormals();
@@ -567,5 +648,67 @@ export class ChunkTerrain {
 
     this.scene.add(mesh);
     this.chunks.set(chunk.key, chunk);
+  }
+
+  cullInvisibleChunks(playerWorld) {
+    if (
+      !this.camera ||
+      !window.game ||
+      !window.game.player ||
+      !window.game.player.mesh
+    ) {
+      return;
+    }
+
+    const player = window.game.player;
+    const playerMesh = player.mesh;
+
+    // Get player's backward direction for culling chunks behind (reuse vector)
+    if (!this._backwardVector) {
+      this._backwardVector = new THREE.Vector3(0, 0, -1);
+    }
+    this._backwardVector.set(0, 0, -1).applyQuaternion(playerMesh.quaternion);
+
+    let culledCount = 0;
+    let visibleCount = 0;
+
+    for (const [key, chunk] of this.chunks.entries()) {
+      // Calculate chunk center position
+      const chunkCenterX = chunk.cx * chunk.size + chunk.size / 2;
+      const chunkCenterZ = chunk.cz * chunk.size + chunk.size / 2;
+
+      // Vector from player to chunk center (no vector objects)
+      const dx = chunkCenterX - playerWorld.x;
+      const dz = chunkCenterZ - playerWorld.z;
+      const distanceToChunk = Math.sqrt(dx * dx + dz * dz);
+
+      // Check if chunk is significantly behind the player
+      let dotProduct = 0;
+      if (distanceToChunk > 0) {
+        // Normalize and dot product manually
+        dotProduct = (dx * this._backwardVector.x + dz * this._backwardVector.z) / distanceToChunk;
+      }
+
+      // Cull chunks that are:
+      // 1. Behind the player (dot product > 0.3 means more than ~70 degrees behind)
+      // 2. Far enough away (> 1500 units) to avoid culling nearby terrain
+      const shouldCull = dotProduct > 0.3 && distanceToChunk > 1500;
+
+      if (chunk.mesh) {
+        const wasVisible = chunk.mesh.visible;
+        chunk.mesh.visible = !shouldCull;
+
+        if (shouldCull && wasVisible) {
+          culledCount++;
+        } else if (!shouldCull) {
+          visibleCount++;
+        }
+      }
+    }
+
+    // Optional debug logging (uncomment to see culling stats)
+    // if (culledCount > 0) {
+    //   console.log(`🎭 Culled ${culledCount} chunks, ${visibleCount} visible`);
+    // }
   }
 }

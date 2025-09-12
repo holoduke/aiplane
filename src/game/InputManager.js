@@ -62,8 +62,8 @@ export class InputManager {
     this.isMouseLocked = document.pointerLockElement === document.getElementById('game-canvas')
   }
 
-  update() {
-    const deltaTime = 1/60
+  update(deltaTime = 1/60) {
+    // Use passed deltaTime or fallback to 60fps
     
     // Enhanced steering controls
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) {
@@ -79,6 +79,11 @@ export class InputManager {
       this.player.fireLasers()
     }
     
+    // Bomb firing
+    if (this.keys['KeyB']) {
+      this.player.fireBomb()
+    }
+    
     // Only stabilize if no steering input is being given
     if (!this.keys['KeyA'] && !this.keys['ArrowLeft'] && 
         !this.keys['KeyD'] && !this.keys['ArrowRight']) {
@@ -90,6 +95,7 @@ export class InputManager {
     return [
       'A/D or Arrow Keys: Steer Left/Right',
       'Space: Fire Lasers',
+      'B: Fire Bomb',
       'Shift: Afterburner',
       'Fighter jet flies forward automatically!'
     ]

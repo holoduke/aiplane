@@ -113,6 +113,13 @@ export class Game {
     // Performance optimizations
     this.renderer.sortObjects = true;
     this.renderer.powerPreference = "high-performance";
+
+    // Additional performance settings
+    this.renderer.info.autoReset = false; // Manually reset for better performance tracking
+    this.renderer.capabilities.maxVertexUniforms = Math.min(
+      this.renderer.capabilities.maxVertexUniforms,
+      1024
+    );
   }
 
   setupScene() {
@@ -135,21 +142,21 @@ export class Game {
   setupPostProcessing() {
     // Create effect composer for post-processing
     this.composer = new EffectComposer(this.renderer);
-    
+
     // Add render pass
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
-    
+
     // Add bloom pass for glowing effects
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
       1.5, // strength
-      0.4, // radius  
+      0.4, // radius
       0.85 // threshold
     );
-    
+
     this.composer.addPass(this.bloomPass);
-    
+
     console.log("✨ Bloom post-processing initialized");
   }
 
@@ -216,6 +223,19 @@ export class Game {
 
     this.scene.add(this.sunLight);
 
+    // Add bright emissive sun for bloom effect
+    const sunGeometry = new THREE.SphereGeometry(100, 16, 16);
+    const sunMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffff88, // Bright yellow
+      emissive: 0xffff88, // Very bright emissive
+      emissiveIntensity: 2.5, // High intensity for strong bloom
+      transparent: true,
+      opacity: 0.8,
+    });
+    this.sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+    this.sunMesh.position.copy(this.sunLight.position);
+    this.scene.add(this.sunMesh);
+
     // Add shadow camera helper for debugging
     this.shadowCameraHelper = new THREE.CameraHelper(
       this.sunLight.shadow.camera
@@ -236,6 +256,9 @@ export class Game {
   start() {
     this.isRunning = true;
     window.game = this;
+
+    // Bind animate once to avoid creating new functions every frame
+    this.boundAnimate = this.animate.bind(this);
 
     // Add shadow debug function
     window.debugShadows = () => {
@@ -331,7 +354,7 @@ export class Game {
       }
     };
 
-    this.animate();
+    this.boundAnimate();
   }
 
   startGame() {
@@ -348,7 +371,7 @@ export class Game {
 
     this.stats.begin();
 
-    requestAnimationFrame(this.animate.bind(this));
+    requestAnimationFrame(this.boundAnimate);
 
     const deltaTime = this.clock.getDelta();
 
@@ -395,7 +418,7 @@ export class Game {
     }
 
     if (this.inputManager) {
-      this.inputManager.update();
+      this.inputManager.update(deltaTime);
     }
 
     this.terrain.update(this.player.position);
@@ -442,10 +465,15 @@ export class Game {
     const playerZ = this.player.position.z;
 
     this.sunLight.position.set(
-      5000 + this.player.position.x,
+      3000 + this.player.position.x,
       2000,
-      -2000 + this.player.position.z
+      2000 + this.player.position.z
     );
+
+    // Update sun mesh position to match light
+    if (this.sunMesh) {
+      this.sunMesh.position.copy(this.sunLight.position);
+    }
 
     // Update shadow camera target to follow player (keep same light direction)
     this.sunLight.target.position.set(playerX, 0, playerZ);
@@ -459,6 +487,9 @@ export class Game {
   }
 
   render() {
+    // Manually reset renderer info for performance tracking
+    this.renderer.info.reset();
+
     // Use post-processing composer for bloom effects
     if (this.composer) {
       this.composer.render();
@@ -472,7 +503,7 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    
+
     // Update composer size for post-processing
     if (this.composer) {
       this.composer.setSize(window.innerWidth, window.innerHeight);

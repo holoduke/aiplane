@@ -8,24 +8,24 @@ export class Player {
     this.camera = camera;
     this.mesh = null;
     this.velocity = new THREE.Vector3();
-    this.position = new THREE.Vector3(0, 650, -4000);
+    this.position = new THREE.Vector3(0, 850, -4000);
     this.rotation = new THREE.Euler();
 
     // Balanced speeds for better control
     this.baseSpeed = 3000; // Cruise/base speed (unchanging target)
     this.forwardSpeed = this.baseSpeed; // Current speed, starts at base
-    this.maxSpeed = 5000; // Maximum speed
-    this.steerSpeed = 600; // Steering responsiveness
+    this.maxSpeed = 9000; // Maximum speed
+    this.steerSpeed = 900; // Steering responsiveness
     this.maxSteerAngle = Math.PI / 3; // 60 degrees - higher turn angle
 
     // Enhanced flight dynamics with higher turn rates
     this.acceleration = 800; // How quickly speed changes
     this.currentTurnRate = 0; // Current turning rate
-    this.maxTurnRate = 5.5; // Much higher turning rate for agile turns
+    this.maxTurnRate = 9.5; // Much higher turning rate for agile turns
     this.turnAcceleration = 16.0; // Faster turn acceleration for sharp turns
-    this.turnDamping = 0.85; // Less damping for more responsive feel
+    this.turnDamping = 0.3; // Less damping for more responsive feel
     this.bankAngle = 0; // Current banking angle
-    this.maxBankAngle = Math.PI / 5; // 90 degrees max bank - full banking
+    this.maxBankAngle = Math.PI / 8; // 90 degrees max bank - full banking
     this.pitchAngle = 0; // Current pitch angle
     this.maxPitchAngle = Math.PI / 10; // 36 degrees max pitch - slightly higher
 
@@ -56,6 +56,30 @@ export class Player {
     this.laserSpeed = 8000; // Very fast laser speed
     this.lastLaserTime = 0;
     this.laserCooldown = 150; // 150ms between shots
+
+    // Bomb system
+    this.bombs = [];
+    this.bombSpeed = 12000; // Slower than lasers
+    this.lastBombTime = 0;
+    this.bombCooldown = 500; // 2 second cooldown between bombs
+    this.explosions = [];
+
+    // Reusable vectors for performance (avoid allocating new ones each frame)
+    this._tempVector1 = new THREE.Vector3();
+    this._tempVector2 = new THREE.Vector3();
+    this._tempVector3 = new THREE.Vector3();
+
+    // Shared geometries and materials for lasers (reuse instead of creating new ones)
+    this._laserCoreGeometry = null;
+    this._laserGlowGeometry = null;
+    this._laserCoreMaterial = null;
+    this._laserGlowMaterial = null;
+
+    // Shared geometries and materials for bombs
+    this._bombCoreGeometry = null;
+    this._bombGlowGeometry = null;
+    this._bombCoreMaterial = null;
+    this._bombGlowMaterial = null;
 
     this.loadJetModel();
   }
@@ -173,7 +197,6 @@ export class Player {
     }
   }
 
-
   createAdvancedJet() {
     console.warn("Fallback to procedural model - OBJ loading failed");
     // This is now just a basic fallback when OBJ loading completely fails
@@ -210,8 +233,8 @@ export class Player {
     this.exhaustGlows = [];
 
     exhaustPositions.forEach((pos, index) => {
-      // Main exhaust glow - bright emissive core
-      const coreGeometry = new THREE.ConeGeometry(8, 40, 8);
+      // Main exhaust glow - bright emissive core (reduced segments for performance)
+      const coreGeometry = new THREE.ConeGeometry(8, 40, 6); // Reduced from 8 to 6 segments
       const coreMaterial = new THREE.MeshStandardMaterial({
         color: 0x00aaff,
         transparent: true,
@@ -225,8 +248,8 @@ export class Player {
       core.position.copy(pos);
       core.rotation.x = -Math.PI / 2; // Point backwards (rotate 90 degrees)
 
-      // Outer glow halo
-      const haloGeometry = new THREE.ConeGeometry(12, 60, 8);
+      // Outer glow halo (reduced segments for performance)
+      const haloGeometry = new THREE.ConeGeometry(12, 60, 6); // Reduced from 8 to 6 segments
       const haloMaterial = new THREE.MeshStandardMaterial({
         color: 0x0066cc,
         transparent: true,
@@ -250,7 +273,6 @@ export class Player {
     });
   }
 
-
   update(deltaTime) {
     // Enhanced physics update
     this.updateFlightDynamics(deltaTime);
@@ -266,6 +288,8 @@ export class Player {
     }
     this.updateAdvancedEffects(deltaTime);
     this.updateLasers(deltaTime);
+    this.updateBombs(deltaTime);
+    this.updateExplosions(deltaTime);
 
     // Camera update
     if (window.game && window.game.gameStarted) {
@@ -308,19 +332,21 @@ export class Player {
     this.mesh.rotation.z += this.angularVelocity.z * deltaTime;
   }
 
-
   autoFlyForward(deltaTime) {
     if (!this.mesh) return;
 
-    // Move in the direction the plane is facing
-    const forward = new THREE.Vector3(0, 0, 1);
-    forward.applyQuaternion(this.mesh.quaternion);
+    // Move in the direction the plane is facing - reuse temp vector
+    this._tempVector1.set(0, 0, 1);
+    this._tempVector1.applyQuaternion(this.mesh.quaternion);
 
     // Set velocity to reflect actual direction and speed
-    this.velocity.copy(forward).multiplyScalar(this.forwardSpeed);
+    this.velocity.copy(this._tempVector1).multiplyScalar(this.forwardSpeed);
 
-    const movement = forward.multiplyScalar(this.forwardSpeed * deltaTime);
-    this.mesh.position.add(movement);
+    // Calculate movement using temp vector
+    this._tempVector2
+      .copy(this._tempVector1)
+      .multiplyScalar(this.forwardSpeed * deltaTime);
+    this.mesh.position.add(this._tempVector2);
 
     this.distanceTraveled += this.forwardSpeed * deltaTime;
   }
@@ -401,8 +427,6 @@ export class Player {
     });
   }
 
-
-
   updateAdvancedCamera(deltaTime) {
     // Don't update camera if mesh isn't loaded yet
     if (!this.mesh) return;
@@ -411,45 +435,46 @@ export class Player {
     const cameraDistance = 50 + this.forwardSpeed * 0.01; // Further back at high speeds
     const cameraHeight = 400; // Fixed height - no more height changes during banking
 
-    // Get plane's backward direction
-    const backward = new THREE.Vector3(0, 0, -1);
-    backward.applyQuaternion(this.mesh.quaternion);
+    // Get plane's backward direction - reuse temp vector
+    this._tempVector1.set(0, 0, -1);
+    this._tempVector1.applyQuaternion(this.mesh.quaternion);
 
-    // Dynamic camera positioning
-    const cameraOffset = backward.multiplyScalar(cameraDistance);
-    cameraOffset.y += cameraHeight;
+    // Dynamic camera positioning - reuse temp vector
+    this._tempVector2.copy(this._tempVector1).multiplyScalar(cameraDistance);
+    this._tempVector2.y += cameraHeight;
 
     // Banking influence on camera - tilt slightly into the turn instead of moving up
     if (Math.abs(this.bankAngle) > 0.1) {
-      const right = new THREE.Vector3(1, 0, 0);
-      right.applyQuaternion(this.mesh.quaternion);
+      this._tempVector3.set(1, 0, 0);
+      this._tempVector3.applyQuaternion(this.mesh.quaternion);
       // Reduce the banking offset and keep it horizontal
-      cameraOffset.add(right.multiplyScalar(Math.sin(this.bankAngle) * 150));
+      this._tempVector3.multiplyScalar(Math.sin(this.bankAngle) * 150);
+      this._tempVector2.add(this._tempVector3);
       // Don't add vertical offset during banking
     }
 
-
-    const targetCameraPos = this.mesh.position.clone().add(cameraOffset);
+    // Calculate target camera position - reuse temp vector
+    this._tempVector1.copy(this.mesh.position).add(this._tempVector2);
 
     // Smooth camera following (time-based alpha)
     const followRate = 5;
     const followAlpha = 1 - Math.exp(-followRate * deltaTime);
-    this.cameraPosition.lerp(targetCameraPos, followAlpha);
+    this.cameraPosition.lerp(this._tempVector1, followAlpha);
     this.camera.position.copy(this.cameraPosition);
 
-    // Look ahead distance based on speed and turning
-    const forward = new THREE.Vector3(0, 0, 1);
-    forward.applyQuaternion(this.mesh.quaternion);
+    // Look ahead distance based on speed and turning - reuse temp vector
+    this._tempVector2.set(0, 0, 1);
+    this._tempVector2.applyQuaternion(this.mesh.quaternion);
 
     const lookAheadDistance =
-      600 + this.forwardSpeed * 0.3 + Math.abs(this.currentTurnRate) * 400;
-    const lookAtTarget = this.mesh.position
-      .clone()
-      .add(forward.multiplyScalar(lookAheadDistance));
+      600 + this.forwardSpeed * 0.3 + Math.abs(this.currentTurnRate) * 20;
+    this._tempVector1
+      .copy(this.mesh.position)
+      .add(this._tempVector2.multiplyScalar(lookAheadDistance));
 
     // Add subtle camera banking - tilt the camera slightly into turns
     if (Math.abs(this.bankAngle) > 0.1) {
-      const bankTilt = this.bankAngle * 0.15; // Subtle camera tilt (15% of plane's bank)
+      const bankTilt = this.bankAngle * 9.15; // Subtle camera tilt (15% of plane's bank)
       this.camera.rotation.z = THREE.MathUtils.lerp(
         this.camera.rotation.z,
         bankTilt,
@@ -466,7 +491,7 @@ export class Player {
     // Smooth look-at (time-based alpha)
     const lookAtRate = 3;
     const lookAtAlpha = 1 - Math.exp(-lookAtRate * deltaTime);
-    this.cameraLookAt.lerp(lookAtTarget, lookAtAlpha);
+    this.cameraLookAt.lerp(this._tempVector1, lookAtAlpha);
     this.camera.lookAt(this.cameraLookAt);
   }
 
@@ -563,6 +588,96 @@ export class Player {
     this.targetThrust = this.afterburner ? 1.5 : 1.0;
   }
 
+  // Bomb firing system
+  fireBomb() {
+    if (!this.mesh) return;
+
+    const currentTime = Date.now();
+    if (currentTime - this.lastBombTime < this.bombCooldown) return;
+
+    this.lastBombTime = currentTime;
+
+    // Get plane's forward direction - reuse temp vector
+    this._tempVector1.set(0, 0, 1);
+    this._tempVector1.applyQuaternion(this.mesh.quaternion);
+
+    // Bomb spawn position (center front of plane)
+    const bombPosition = new THREE.Vector3(0, 0, 40); // Front center
+
+    // Transform local position to world position - reuse temp vector
+    this._tempVector2.copy(bombPosition);
+    this._tempVector2.applyMatrix4(this.mesh.matrixWorld);
+
+    this.createBomb(this._tempVector2, this._tempVector1);
+  }
+
+  createBomb(position, direction) {
+    const bombLength = 400; // Larger than lasers
+
+    // Create shared geometries and materials only once
+    if (!this._bombCoreGeometry) {
+      this._bombCoreGeometry = new THREE.CylinderGeometry(6, 6, bombLength, 8); // Thicker than lasers
+      this._bombGlowGeometry = new THREE.CylinderGeometry(
+        12,
+        12,
+        bombLength,
+        8
+      ); // Much thicker glow
+
+      this._bombCoreMaterial = new THREE.MeshStandardMaterial({
+        color: 0xff0000, // Bright red
+        transparent: true,
+        opacity: 1.0,
+        emissive: 0xff0000,
+        emissiveIntensity: 1.5, // Very bright for bloom
+        metalness: 0,
+        roughness: 1,
+      });
+
+      this._bombGlowMaterial = new THREE.MeshStandardMaterial({
+        color: 0xff4400, // Orange-red glow
+        transparent: true,
+        opacity: 0.4,
+        emissive: 0xff4400,
+        emissiveIntensity: 1.0,
+        blending: THREE.AdditiveBlending,
+        metalness: 0,
+        roughness: 1,
+      });
+    }
+
+    // Reuse geometries and materials
+    const core = new THREE.Mesh(this._bombCoreGeometry, this._bombCoreMaterial);
+    const glow = new THREE.Mesh(this._bombGlowGeometry, this._bombGlowMaterial);
+
+    // Position and orient both cylinders
+    core.position.copy(position);
+    glow.position.copy(position);
+
+    // Orient cylinders along the direction vector - reuse temp vector
+    this._tempVector3.set(0, 1, 0);
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(this._tempVector3, direction.normalize());
+
+    core.quaternion.copy(quaternion);
+    glow.quaternion.copy(quaternion);
+
+    // Bomb projectile data
+    const bombData = {
+      mesh: core,
+      glow: glow,
+      position: position.clone(),
+      direction: direction.clone().normalize(),
+      velocity: direction.clone().normalize().multiplyScalar(this.bombSpeed),
+      creationTime: Date.now(),
+      exploded: false,
+    };
+
+    this.bombs.push(bombData);
+    this.scene.add(core);
+    this.scene.add(glow);
+  }
+
   // Laser firing system
   fireLasers() {
     if (!this.mesh) return;
@@ -572,9 +687,9 @@ export class Player {
 
     this.lastLaserTime = currentTime;
 
-    // Get plane's forward direction
-    const forward = new THREE.Vector3(0, 0, 1);
-    forward.applyQuaternion(this.mesh.quaternion);
+    // Get plane's forward direction - reuse temp vector
+    this._tempVector1.set(0, 0, 1);
+    this._tempVector1.applyQuaternion(this.mesh.quaternion);
 
     // Laser spawn positions (from wings)
     const laserPositions = [
@@ -583,52 +698,72 @@ export class Player {
     ];
 
     laserPositions.forEach((localPos) => {
-      // Transform local position to world position
-      const worldPos = localPos.clone();
-      worldPos.applyMatrix4(this.mesh.matrixWorld);
+      // Transform local position to world position - reuse temp vector
+      this._tempVector2.copy(localPos);
+      this._tempVector2.applyMatrix4(this.mesh.matrixWorld);
 
-      this.createLaser(worldPos, forward.clone());
+      this.createLaser(this._tempVector2, this._tempVector1);
     });
   }
 
   createLaser(position, direction) {
     const laserLength = 300; // Much longer lasers
 
-    // Core laser beam using cylinder geometry
-    const coreGeometry = new THREE.CylinderGeometry(3, 3, laserLength, 80);
-    const coreMaterial = new THREE.MeshStandardMaterial({
-      color: 0x00ff00, // Bright green
-      transparent: true,
-      opacity: 1.0,
-      emissive: 0x00ff00,
-      emissiveIntensity: 0.8,
-      metalness: 0,
-      roughness: 1,
-    });
-    const core = new THREE.Mesh(coreGeometry, coreMaterial);
+    // Create shared geometries and materials only once
+    if (!this._laserCoreGeometry) {
+      this._laserCoreGeometry = new THREE.CylinderGeometry(
+        3,
+        3,
+        laserLength,
+        8
+      ); // Reduced segments from 80 to 8
+      this._laserGlowGeometry = new THREE.CylinderGeometry(
+        5,
+        5,
+        laserLength,
+        8
+      );
 
-    // Outer glow using larger cylinder
-    const glowGeometry = new THREE.CylinderGeometry(5, 5, laserLength, 80);
-    const glowMaterial = new THREE.MeshStandardMaterial({
-      color: 0x00ff00,
-      transparent: true,
-      opacity: 0.3,
-      emissive: 0x00ff00,
-      emissiveIntensity: 0.2,
-      blending: THREE.AdditiveBlending,
-      metalness: 0,
-      roughness: 1,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      this._laserCoreMaterial = new THREE.MeshStandardMaterial({
+        color: 0x00ff00, // Bright green
+        transparent: true,
+        opacity: 1.0,
+        emissive: 0x00ff00,
+        emissiveIntensity: 0.8,
+        metalness: 0,
+        roughness: 1,
+      });
+
+      this._laserGlowMaterial = new THREE.MeshStandardMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 0.3,
+        emissive: 0x00ff00,
+        emissiveIntensity: 0.2,
+        blending: THREE.AdditiveBlending,
+        metalness: 0,
+        roughness: 1,
+      });
+    }
+
+    // Reuse geometries and materials
+    const core = new THREE.Mesh(
+      this._laserCoreGeometry,
+      this._laserCoreMaterial
+    );
+    const glow = new THREE.Mesh(
+      this._laserGlowGeometry,
+      this._laserGlowMaterial
+    );
 
     // Position and orient both cylinders
     core.position.copy(position);
     glow.position.copy(position);
 
-    // Orient cylinders along the direction vector
-    const up = new THREE.Vector3(0, 1, 0);
+    // Orient cylinders along the direction vector - reuse temp vector
+    this._tempVector3.set(0, 1, 0);
     const quaternion = new THREE.Quaternion();
-    quaternion.setFromUnitVectors(up, direction.normalize());
+    quaternion.setFromUnitVectors(this._tempVector3, direction.normalize());
 
     core.quaternion.copy(quaternion);
     glow.quaternion.copy(quaternion);
@@ -660,10 +795,7 @@ export class Player {
       if (currentTime - laser.creationTime > laser.life) {
         this.scene.remove(laser.mesh);
         this.scene.remove(laser.glow);
-        laser.mesh.geometry.dispose();
-        laser.mesh.material.dispose();
-        laser.glow.geometry.dispose();
-        laser.glow.material.dispose();
+        // Don't dispose shared geometries and materials - they're reused
         this.lasers.splice(i, 1);
         continue;
       }
@@ -682,6 +814,172 @@ export class Player {
     }
   }
 
+  updateBombs(deltaTime) {
+    const currentTime = Date.now();
+
+    // Update bomb positions and check for explosions
+    for (let i = this.bombs.length - 1; i >= 0; i--) {
+      const bomb = this.bombs[i];
+
+      // Check if bomb should explode (after 3 seconds)
+      if (!bomb.exploded && currentTime - bomb.creationTime > 500) {
+        this.createExplosion(bomb.position.clone());
+
+        // Remove bomb visuals
+        this.scene.remove(bomb.mesh);
+        this.scene.remove(bomb.glow);
+        this.bombs.splice(i, 1);
+        continue;
+      }
+
+      if (!bomb.exploded) {
+        // Move bomb forward
+        bomb.position.add(bomb.velocity.clone().multiplyScalar(deltaTime));
+
+        // Update bomb and glow positions
+        bomb.mesh.position.copy(bomb.position);
+        bomb.glow.position.copy(bomb.position);
+
+        // Add pulsing effect to make it more dramatic
+        const pulse = 1 + Math.sin(currentTime * 0.02) * 0.3;
+        bomb.mesh.material.emissiveIntensity = 1.5 * pulse;
+        bomb.glow.material.opacity = 0.4 * pulse;
+      }
+    }
+  }
+
+  createExplosion(position) {
+    const explosionData = {
+      position: position.clone(),
+      creationTime: Date.now(),
+      duration: 800, // 2 second explosion duration
+      effects: [],
+    };
+
+    // Main explosion sphere (bright core)
+    const coreGeometry = new THREE.SphereGeometry(50, 16, 16);
+    const coreMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffaa00, // Bright orange
+      transparent: true,
+      opacity: 1.0,
+      emissive: 0xffaa00,
+      emissiveIntensity: 3.0, // Very bright for massive bloom
+      metalness: 0,
+      roughness: 1,
+    });
+    const core = new THREE.Mesh(coreGeometry, coreMaterial);
+    core.position.copy(position);
+    this.scene.add(core);
+    explosionData.effects.push({ type: "core", mesh: core });
+
+    // Outer explosion glow
+    const glowGeometry = new THREE.SphereGeometry(100, 12, 12);
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff4400, // Red-orange
+      transparent: true,
+      opacity: 0.6,
+      emissive: 0xff4400,
+      emissiveIntensity: 2.0,
+      blending: THREE.AdditiveBlending,
+      metalness: 0,
+      roughness: 1,
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.position.copy(position);
+    this.scene.add(glow);
+    explosionData.effects.push({ type: "glow", mesh: glow });
+
+    // Shockwave rings
+    for (let i = 0; i < 3; i++) {
+      const ringGeometry = new THREE.RingGeometry(10 + i * 20, 15 + i * 25, 16);
+      const ringMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffff88, // Bright yellow
+        transparent: true,
+        opacity: 0.8,
+        emissive: 0xffff88,
+        emissiveIntensity: 1.5,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        metalness: 0,
+        roughness: 1,
+      });
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+      ring.position.copy(position);
+      ring.position.y += (i - 1) * 10; // Slightly offset rings
+      this.scene.add(ring);
+      explosionData.effects.push({
+        type: "shockwave",
+        mesh: ring,
+        startTime: Date.now() + i * 20,
+      });
+    }
+
+    this.explosions.push(explosionData);
+  }
+
+  updateExplosions(deltaTime) {
+    const currentTime = Date.now();
+
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const explosion = this.explosions[i];
+      const age = currentTime - explosion.creationTime;
+      const progress = age / explosion.duration;
+
+      if (progress > 1.0) {
+        // Remove expired explosion
+        explosion.effects.forEach((effect) => {
+          this.scene.remove(effect.mesh);
+          effect.mesh.geometry.dispose();
+          effect.mesh.material.dispose();
+        });
+        this.explosions.splice(i, 1);
+        continue;
+      }
+
+      // Update explosion effects
+      explosion.effects.forEach((effect) => {
+        const mesh = effect.mesh;
+
+        switch (effect.type) {
+          case "core":
+            // Expand and fade core
+            const coreScale = 1 + progress * 3;
+            mesh.scale.setScalar(coreScale);
+            mesh.material.opacity = Math.max(0, 1 - progress * 1.5);
+            mesh.material.emissiveIntensity = Math.max(0, 3.0 * (1 - progress));
+            break;
+
+          case "glow":
+            // Expand glow more slowly
+            const glowScale = 1 + progress * 2;
+            mesh.scale.setScalar(glowScale);
+            mesh.material.opacity = Math.max(0, 0.6 * (1 - progress * 0.8));
+            mesh.material.emissiveIntensity = Math.max(
+              0,
+              2.0 * (1 - progress * 0.5)
+            );
+            break;
+
+          case "shockwave":
+            // Expanding shockwave rings with delay
+            const ringAge =
+              currentTime - (effect.startTime || explosion.creationTime);
+            if (ringAge > 0) {
+              const ringProgress = Math.min(ringAge / 1000, 1); // 1 second ring expansion
+              const ringScale = 1 + ringProgress * 8;
+              mesh.scale.setScalar(ringScale);
+              mesh.material.opacity = Math.max(0, 0.8 * (1 - ringProgress));
+              mesh.material.emissiveIntensity = Math.max(
+                0,
+                1.5 * (1 - ringProgress * 0.7)
+              );
+              mesh.rotation.z += deltaTime * 2; // Rotate for effect
+            }
+            break;
+        }
+      });
+    }
+  }
 
   getTerrainHeightAtPosition(x = null, z = null) {
     if (
