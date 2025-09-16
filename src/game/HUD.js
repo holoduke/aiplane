@@ -4,46 +4,288 @@ export class HUD {
     this.altitudeElement = document.getElementById("altitude");
     this.healthElement = document.getElementById("health");
 
+    // Button state tracking for continuous firing
+    this.shootButtonPressed = false
+    this.bombButtonPressed = false
+
     this.setupHUD();
   }
 
   setupHUD() {
-    this.createRadar();
     this.createHealthBar();
-    this.createMinimap();
+    this.createVirtualButtons();
     this.createInstructions();
   }
 
-  createRadar() {
-    const radar = document.createElement("div");
-    radar.id = "radar";
-    radar.style.cssText = `
-      position: absolute;
-      top: 20px;
+  createVirtualButtons() {
+    // Create container for virtual buttons
+    const buttonContainer = document.createElement("div");
+    buttonContainer.id = "virtual-buttons";
+    buttonContainer.style.cssText = `
+      position: fixed;
+      bottom: 80px;
       right: 20px;
-      width: 150px;
-      height: 150px;
-      border: 2px solid #00ff00;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.7);
-      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      z-index: 10000;
+      pointer-events: auto;
     `;
-    document.getElementById("hud").appendChild(radar);
-
-    const radarCenter = document.createElement("div");
-    radarCenter.style.cssText = `
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 4px;
-      height: 4px;
-      background: #00ff00;
+    
+    // Create shoot button
+    const shootButton = document.createElement("div");
+    shootButton.id = "virtual-shoot-button";
+    shootButton.innerHTML = "SHOOT";
+    shootButton.style.cssText = `
+      width: 80px;
+      height: 80px;
+      background: rgba(128, 128, 128, 0.3);
+      border: 2px solid rgba(128, 128, 128, 0.5);
       border-radius: 50%;
-      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+      transition: all 0.1s ease;
+      pointer-events: auto;
+      position: relative;
     `;
-    radar.appendChild(radarCenter);
+    
+    // Create bomb button
+    const bombButton = document.createElement("div");
+    bombButton.id = "virtual-bomb-button";
+    bombButton.innerHTML = "BOMB";
+    bombButton.style.cssText = `
+      width: 80px;
+      height: 80px;
+      background: rgba(128, 128, 128, 0.3);
+      border: 2px solid rgba(128, 128, 128, 0.5);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+      transition: all 0.1s ease;
+      pointer-events: auto;
+      position: relative;
+    `;
+    
+    // Create fullscreen button
+    const fullscreenButton = document.createElement("div");
+    fullscreenButton.id = "virtual-fullscreen-button";
+    fullscreenButton.innerHTML = "⛶";
+    fullscreenButton.style.cssText = `
+      width: 60px;
+      height: 60px;
+      background: rgba(128, 128, 128, 0.3);
+      border: 2px solid rgba(128, 128, 128, 0.5);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+      transition: all 0.1s ease;
+      pointer-events: auto;
+      position: relative;
+    `;
 
-    this.radarElement = radar;
+    buttonContainer.appendChild(shootButton);
+    buttonContainer.appendChild(bombButton);
+    buttonContainer.appendChild(fullscreenButton);
+    document.getElementById("hud").appendChild(buttonContainer);
+    
+    // Store references
+    this.fullscreenButton = fullscreenButton;
+    
+    // Store references
+    this.shootButton = shootButton;
+    this.bombButton = bombButton;
+    
+    // Add touch/click handlers
+    this.setupButtonHandlers();
+  }
+
+  setupButtonHandlers() {
+    // Helper function to handle button press
+    const handleShootPress = () => {
+      this.shootButton.style.transform = 'scale(0.9)';
+      this.shootButton.style.background = 'rgba(200, 200, 200, 0.6)';
+      this.shootButton.style.borderColor = 'rgba(200, 200, 200, 0.8)';
+      this.shootButtonPressed = true; // Set state flag for continuous firing
+      console.log('Shoot button pressed!'); // Debug
+    };
+
+    const handleShootRelease = () => {
+      this.shootButton.style.transform = 'scale(1.0)';
+      this.shootButton.style.background = 'rgba(128, 128, 128, 0.3)';
+      this.shootButton.style.borderColor = 'rgba(128, 128, 128, 0.5)';
+      this.shootButtonPressed = false; // Clear state flag
+      console.log('Shoot button released!'); // Debug
+    };
+
+    const handleBombPress = () => {
+      this.bombButton.style.transform = 'scale(0.9)';
+      this.bombButton.style.background = 'rgba(200, 200, 200, 0.6)';
+      this.bombButton.style.borderColor = 'rgba(200, 200, 200, 0.8)';
+      this.bombButtonPressed = true; // Set state flag for continuous firing
+      console.log('Bomb button pressed!'); // Debug
+    };
+
+    const handleBombRelease = () => {
+      this.bombButton.style.transform = 'scale(1.0)';
+      this.bombButton.style.background = 'rgba(128, 128, 128, 0.3)';
+      this.bombButton.style.borderColor = 'rgba(128, 128, 128, 0.5)';
+      this.bombButtonPressed = false; // Clear state flag
+      console.log('Bomb button released!'); // Debug
+    };
+
+    const handleFullscreenPress = () => {
+      this.fullscreenButton.style.transform = 'scale(0.9)';
+      this.fullscreenButton.style.background = 'rgba(200, 200, 200, 0.6)';
+      this.fullscreenButton.style.borderColor = 'rgba(200, 200, 200, 0.8)';
+      this.toggleFullscreen();
+      console.log('Fullscreen button pressed!'); // Debug
+    };
+
+    const handleFullscreenRelease = () => {
+      this.fullscreenButton.style.transform = 'scale(1.0)';
+      this.fullscreenButton.style.background = 'rgba(128, 128, 128, 0.3)';
+      this.fullscreenButton.style.borderColor = 'rgba(128, 128, 128, 0.5)';
+    };
+
+    // Shoot button - touch events
+    this.shootButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleShootPress();
+    }, { passive: false });
+
+    this.shootButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleShootRelease();
+    }, { passive: false });
+
+    this.shootButton.addEventListener('touchcancel', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleShootRelease();
+    }, { passive: false });
+
+    // Shoot button - mouse events (for desktop testing)
+    this.shootButton.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleShootPress();
+    });
+
+    this.shootButton.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleShootRelease();
+    });
+
+    // Bomb button - touch events
+    this.bombButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleBombPress();
+    }, { passive: false });
+
+    this.bombButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleBombRelease();
+    }, { passive: false });
+
+    this.bombButton.addEventListener('touchcancel', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleBombRelease();
+    }, { passive: false });
+
+    // Bomb button - mouse events (for desktop testing)
+    this.bombButton.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleBombPress();
+    });
+
+    this.bombButton.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleBombRelease();
+    });
+
+    // Fullscreen button - touch events
+    this.fullscreenButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFullscreenPress();
+    }, { passive: false });
+
+    this.fullscreenButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFullscreenRelease();
+    }, { passive: false });
+
+    // Fullscreen button - mouse events (for desktop testing)
+    this.fullscreenButton.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFullscreenPress();
+    });
+
+    this.fullscreenButton.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFullscreenRelease();
+    });
+
+    console.log('Virtual button handlers set up!'); // Debug
+  }
+
+  toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      // Enter fullscreen
+      const element = document.documentElement;
+      if (element.requestFullscreen) {
+        element.requestFullscreen();
+      } else if (element.webkitRequestFullscreen) { // Safari
+        element.webkitRequestFullscreen();
+      } else if (element.msRequestFullscreen) { // IE/Edge
+        element.msRequestFullscreen();
+      }
+      this.fullscreenButton.innerHTML = "⛶"; // Exit fullscreen icon
+      console.log('Entering fullscreen mode');
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) { // Safari
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) { // IE/Edge
+        document.msExitFullscreen();
+      }
+      this.fullscreenButton.innerHTML = "⛶"; // Enter fullscreen icon
+      console.log('Exiting fullscreen mode');
+    }
   }
 
   createHealthBar() {
@@ -74,37 +316,6 @@ export class HUD {
     this.healthBarElement = healthFill;
   }
 
-  createMinimap() {
-    const minimap = document.createElement("div");
-    minimap.id = "minimap";
-    minimap.style.cssText = `
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      width: 200px;
-      height: 200px;
-      border: 2px solid #00ff00;
-      background: rgba(0, 0, 0, 0.7);
-      overflow: hidden;
-    `;
-
-    const minimapPlayer = document.createElement("div");
-    minimapPlayer.id = "minimap-player";
-    minimapPlayer.style.cssText = `
-      position: absolute;
-      width: 6px;
-      height: 6px;
-      background: #00ff00;
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-    `;
-
-    minimap.appendChild(minimapPlayer);
-    document.getElementById("hud").appendChild(minimap);
-
-    this.minimapElement = minimap;
-    this.minimapPlayerElement = minimapPlayer;
-  }
 
   createInstructions() {
     const instructions = document.createElement("div");
@@ -210,8 +421,6 @@ export class HUD {
     this.healthElement.textContent = `Health: ${stats.health}`;
 
     this.updateHealthBar(stats.health);
-    this.updateMinimap(stats.position);
-    this.updateRadar(stats.position);
   }
 
   updateHealthBar(health) {
@@ -229,27 +438,7 @@ export class HUD {
     }
   }
 
-  updateMinimap(playerPosition) {
-    const mapScale = 2500;
-    const mapSize = 200;
 
-    const mapX = (playerPosition.x / mapScale) * (mapSize / 2) + mapSize / 2;
-    const mapZ = (playerPosition.z / mapScale) * (mapSize / 2) + mapSize / 2;
-
-    this.minimapPlayerElement.style.left = `${Math.max(
-      0,
-      Math.min(mapSize, mapX)
-    )}px`;
-    this.minimapPlayerElement.style.top = `${Math.max(
-      0,
-      Math.min(mapSize, mapZ)
-    )}px`;
-  }
-
-  updateRadar(playerPosition) {
-    // Radar now just shows the player position - no enemies to track
-    // Could be used for terrain features in the future
-  }
 
   showGameOver() {
     const gameOver = document.createElement("div");
@@ -271,7 +460,7 @@ export class HUD {
     gameOver.innerHTML = `
       <h1 style="margin-top: 0;">GAME OVER</h1>
       <p>Your fighter has been destroyed!</p>
-      <button onclick="location.reload()" style="
+      <button id="restart-button" style="
         background: #ff0000;
         color: #fff;
         border: none;
@@ -281,9 +470,48 @@ export class HUD {
         border-radius: 5px;
         cursor: pointer;
         margin-top: 20px;
+        pointer-events: auto !important;
+        z-index: 99999 !important;
+        position: relative;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
       ">RESTART</button>
     `;
 
     document.getElementById("hud").appendChild(gameOver);
+    
+    // Multiple restart methods for maximum compatibility
+    const restartGame = () => {
+      console.log("Restarting game...");
+      try {
+        window.location.href = window.location.href;
+      } catch (e) {
+        window.location.reload(true);
+      }
+    };
+    
+    // Wait a moment for DOM to settle
+    setTimeout(() => {
+      const restartButton = document.getElementById("restart-button");
+      if (restartButton) {
+        // Multiple event types
+        restartButton.onclick = restartGame;
+        restartButton.addEventListener("click", restartGame, { passive: false });
+        restartButton.addEventListener("mouseup", restartGame, { passive: false });
+        restartButton.addEventListener("touchend", restartGame, { passive: false });
+        
+        console.log("Restart button handlers attached");
+      } else {
+        console.error("Restart button not found!");
+      }
+      
+      // Also make the entire game over dialog clickable
+      gameOver.addEventListener("click", (event) => {
+        console.log("Game over dialog clicked");
+        restartGame();
+      }, { passive: false });
+      
+    }, 100);
   }
 }

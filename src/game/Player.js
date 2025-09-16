@@ -14,7 +14,7 @@ export class Player {
     // Balanced speeds for better control
     this.baseSpeed = 3000; // Cruise/base speed (unchanging target)
     this.forwardSpeed = this.baseSpeed; // Current speed, starts at base
-    this.maxSpeed = 9000; // Maximum speed
+    this.maxSpeed = 2000; // Maximum speed
     this.steerSpeed = 900; // Steering responsiveness
     this.maxSteerAngle = Math.PI / 3; // 60 degrees - higher turn angle
 
@@ -22,7 +22,7 @@ export class Player {
     this.acceleration = 800; // How quickly speed changes
     this.currentTurnRate = 0; // Current turning rate
     this.maxTurnRate = 9.5; // Much higher turning rate for agile turns
-    this.turnAcceleration = 16.0; // Faster turn acceleration for sharp turns
+    this.turnAcceleration = 60.0; // Faster turn acceleration for sharp turns
     this.turnDamping = 0.3; // Less damping for more responsive feel
     this.bankAngle = 0; // Current banking angle
     this.maxBankAngle = Math.PI / 8; // 90 degrees max bank - full banking
@@ -30,7 +30,7 @@ export class Player {
     this.maxPitchAngle = Math.PI / 10; // 36 degrees max pitch - slightly higher
 
     // Turn angle limits
-    this.maxTurnAngle = (560 * Math.PI) / 180; // 90 degrees max turn angle
+    this.maxTurnAngle = (360 * Math.PI) / 180; // 90 degrees max turn angle
     this.currentTurnAngle = 0; // Track current turn angle from center
 
     // Advanced flight characteristics
@@ -170,9 +170,11 @@ export class Player {
 
         // Apply basic material since MTL failed
         const basicMaterial = new THREE.MeshStandardMaterial({
-          color: 0x4a90e2,
-          metalness: 0.7,
-          roughness: 0.3,
+          color: 0x2c3e50, // Dark blue-grey like modern fighter jets
+          metalness: 0.8,
+          roughness: 0.2,
+          emissive: 0x0a1425,
+          emissiveIntensity: 0.1,
         });
 
         this.mesh.traverse((child) => {
@@ -203,9 +205,11 @@ export class Player {
     const group = new THREE.Group();
 
     const basicMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4a90e2,
-      metalness: 0.7,
-      roughness: 0.3,
+      color: 0x2c3e50, // Dark blue-grey like modern fighter jets
+      metalness: 0.8,
+      roughness: 0.2,
+      emissive: 0x0a1425,
+      emissiveIntensity: 0.1,
     });
 
     // Simple fallback geometry
@@ -255,7 +259,7 @@ export class Player {
         transparent: true,
         opacity: 0.4,
         emissive: 0x0066cc,
-        emissiveIntensity: 1.5,
+        emissiveIntensity: 3.5,
         blending: THREE.AdditiveBlending,
         metalness: 0,
         roughness: 1,
@@ -346,6 +350,11 @@ export class Player {
     this._tempVector2
       .copy(this._tempVector1)
       .multiplyScalar(this.forwardSpeed * deltaTime);
+
+    // Add simple side movement based on banking angle
+    const sideMovement = this.bankAngle * -200 * deltaTime; // Adjust 200 for sensitivity
+    this._tempVector2.x += sideMovement;
+
     this.mesh.position.add(this._tempVector2);
 
     this.distanceTraveled += this.forwardSpeed * deltaTime;
@@ -629,7 +638,7 @@ export class Player {
         transparent: true,
         opacity: 1.0,
         emissive: 0xff0000,
-        emissiveIntensity: 1.5, // Very bright for bloom
+        emissiveIntensity: 4.5, // Very bright for bloom
         metalness: 0,
         roughness: 1,
       });
@@ -639,7 +648,7 @@ export class Player {
         transparent: true,
         opacity: 0.4,
         emissive: 0xff4400,
-        emissiveIntensity: 1.0,
+        emissiveIntensity: 3.0,
         blending: THREE.AdditiveBlending,
         metalness: 0,
         roughness: 1,
@@ -739,7 +748,7 @@ export class Player {
         transparent: true,
         opacity: 0.3,
         emissive: 0x00ff00,
-        emissiveIntensity: 0.2,
+        emissiveIntensity: 4.2,
         blending: THREE.AdditiveBlending,
         metalness: 0,
         roughness: 1,
@@ -807,6 +816,26 @@ export class Player {
       laser.mesh.position.copy(laser.position);
       laser.glow.position.copy(laser.position);
 
+      // Check collision with enemies
+      if (window.game && window.game.enemyManager) {
+        console.log(`🔫 Checking laser collision at:`, laser.position);
+        const hits = window.game.enemyManager.damageEnemiesInArea(
+          laser.position,
+          150,
+          25
+        ); // Much larger radius
+        if (hits.length > 0) {
+          console.log(`🔫💥 Laser hit ${hits.length} enemies!`);
+          // Remove laser on hit
+          this.scene.remove(laser.mesh);
+          this.scene.remove(laser.glow);
+          this.lasers.splice(i, 1);
+          continue;
+        }
+      } else {
+        console.log(`🔫❌ No enemy manager found for collision check`);
+      }
+
       // Add slight pulsing effect to make it more visible
       const pulse = 1 + Math.sin(currentTime * 0.01) * 0.2;
       laser.mesh.material.emissiveIntensity = 0.8 * pulse;
@@ -821,9 +850,24 @@ export class Player {
     for (let i = this.bombs.length - 1; i >= 0; i--) {
       const bomb = this.bombs[i];
 
-      // Check if bomb should explode (after 3 seconds)
-      if (!bomb.exploded && currentTime - bomb.creationTime > 500) {
+      // Check if bomb should explode (after 0.5 seconds) or hit enemy
+      if (
+        !bomb.exploded &&
+        (currentTime - bomb.creationTime > 500 ||
+          this.checkBombEnemyCollision(bomb))
+      ) {
         this.createExplosion(bomb.position.clone());
+
+        // Damage enemies in explosion area
+        if (window.game && window.game.enemyManager) {
+          console.log(`💣 Bomb exploding at:`, bomb.position);
+          const bombHits = window.game.enemyManager.damageEnemiesInArea(
+            bomb.position,
+            300,
+            9999
+          ); // Instant kill damage
+          console.log(`💣💥 Bomb hit ${bombHits.length} enemies!`);
+        }
 
         // Remove bomb visuals
         this.scene.remove(bomb.mesh);
@@ -992,6 +1036,203 @@ export class Player {
       return window.game.terrain.getHeightAtPosition(queryX, queryZ);
     }
     return 0;
+  }
+
+  checkBombEnemyCollision(bomb) {
+    if (!window.game || !window.game.enemyManager) return false;
+
+    // Check if bomb is close to any enemy
+    for (const enemy of window.game.enemyManager.enemies) {
+      if (!enemy.isDestroyed()) {
+        const distance = bomb.position.distanceTo(enemy.getPosition());
+        if (distance < 100) {
+          // 100 unit trigger distance
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  takeDamage(damage) {
+    this.health = Math.max(0, this.health - damage);
+    console.log(`💥 Player took ${damage} damage! Health: ${this.health}`);
+
+    // Check if player is dead
+    if (this.health <= 0) {
+      console.log("💀 Player destroyed!");
+
+      // Create massive explosion effect
+      this.createPlayerDeathExplosion();
+
+      // Delay game over to show explosion
+      setTimeout(() => {
+        if (window.game && window.game.hud) {
+          window.game.hud.showGameOver();
+        }
+      }, 2000); // 2 second delay
+    }
+
+    return this.health <= 0;
+  }
+
+  createPlayerDeathExplosion() {
+    if (!this.mesh) return;
+
+    const explosionPos = this.mesh.position.clone();
+    console.log("💥🔥 Creating player death explosion at:", explosionPos);
+
+    // Main explosion sphere
+    const mainExplosionGeometry = new THREE.SphereGeometry(100, 16, 16);
+    const mainExplosionMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffaa00,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const mainExplosion = new THREE.Mesh(
+      mainExplosionGeometry,
+      mainExplosionMaterial
+    );
+    mainExplosion.position.copy(explosionPos);
+    this.scene.add(mainExplosion);
+
+    // Secondary explosion rings
+    const explosionRings = [];
+    for (let i = 0; i < 5; i++) {
+      const ringGeometry = new THREE.TorusGeometry(50 + i * 30, 10, 8, 16);
+      const ringMaterial = new THREE.MeshBasicMaterial({
+        color: i % 2 === 0 ? 0xff4400 : 0xffff00,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+      });
+
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+      ring.position.copy(explosionPos);
+      ring.rotation.x = Math.random() * Math.PI;
+      ring.rotation.y = Math.random() * Math.PI;
+      ring.rotation.z = Math.random() * Math.PI;
+
+      explosionRings.push(ring);
+      this.scene.add(ring);
+    }
+
+    // Debris particles
+    const debrisParticles = [];
+    for (let i = 0; i < 30; i++) {
+      const debrisGeometry = new THREE.BoxGeometry(
+        Math.random() * 20 + 5,
+        Math.random() * 20 + 5,
+        Math.random() * 20 + 5
+      );
+      const debrisMaterial = new THREE.MeshBasicMaterial({
+        color: Math.random() > 0.5 ? 0x444444 : 0x888888,
+        transparent: true,
+        opacity: 1.0,
+      });
+
+      const debris = new THREE.Mesh(debrisGeometry, debrisMaterial);
+      debris.position.copy(explosionPos);
+      debris.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 2000,
+        (Math.random() - 0.5) * 2000,
+        (Math.random() - 0.5) * 2000
+      );
+      debris.angularVelocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10
+      );
+
+      debrisParticles.push(debris);
+      this.scene.add(debris);
+    }
+
+    // Sparkle effects
+    const sparkles = [];
+    for (let i = 0; i < 50; i++) {
+      const sparkleGeometry = new THREE.SphereGeometry(
+        Math.random() * 5 + 2,
+        4,
+        4
+      );
+      const sparkleMaterial = new THREE.MeshBasicMaterial({
+        color: Math.random() > 0.5 ? 0xffff00 : 0xff8800,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+      });
+
+      const sparkle = new THREE.Mesh(sparkleGeometry, sparkleMaterial);
+      sparkle.position.copy(explosionPos);
+      sparkle.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 1500,
+        (Math.random() - 0.5) * 1500,
+        (Math.random() - 0.5) * 1500
+      );
+
+      sparkles.push(sparkle);
+      this.scene.add(sparkle);
+    }
+
+    // Hide the player mesh
+    if (this.mesh) {
+      this.mesh.visible = false;
+    }
+
+    // Animate explosion
+    let explosionTime = 0;
+    const animateExplosion = () => {
+      explosionTime += 16; // ~60fps
+      const progress = explosionTime / 3000; // 3 second explosion
+
+      if (progress > 1) {
+        // Clean up explosion effects
+        this.scene.remove(mainExplosion);
+        explosionRings.forEach((ring) => this.scene.remove(ring));
+        debrisParticles.forEach((debris) => this.scene.remove(debris));
+        sparkles.forEach((sparkle) => this.scene.remove(sparkle));
+        return;
+      }
+
+      // Animate main explosion
+      mainExplosion.scale.setScalar(1 + progress * 4);
+      mainExplosion.material.opacity = 1 - progress;
+
+      // Animate rings
+      explosionRings.forEach((ring, index) => {
+        ring.scale.setScalar(1 + progress * (2 + index * 0.5));
+        ring.material.opacity = 0.8 - progress;
+        ring.rotation.x += 0.05;
+        ring.rotation.y += 0.03;
+        ring.rotation.z += 0.02;
+      });
+
+      // Animate debris
+      debrisParticles.forEach((debris) => {
+        debris.position.add(debris.velocity.clone().multiplyScalar(0.016));
+        debris.rotation.x += debris.angularVelocity.x * 0.016;
+        debris.rotation.y += debris.angularVelocity.y * 0.016;
+        debris.rotation.z += debris.angularVelocity.z * 0.016;
+        debris.material.opacity = 1 - progress;
+
+        // Apply gravity to debris
+        debris.velocity.y -= 500 * 0.016;
+      });
+
+      // Animate sparkles
+      sparkles.forEach((sparkle) => {
+        sparkle.position.add(sparkle.velocity.clone().multiplyScalar(0.016));
+        sparkle.material.opacity = 1 - progress;
+        sparkle.scale.setScalar(1 - progress * 0.5);
+      });
+
+      requestAnimationFrame(animateExplosion);
+    };
+
+    animateExplosion();
   }
 
   getStats() {

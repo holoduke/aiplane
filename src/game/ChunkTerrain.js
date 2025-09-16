@@ -27,10 +27,10 @@ export class ChunkTerrain {
 
     // LOD rings (near → far). Ensure complete coverage around player
     this.lods = [
-      { id: 0, maxRange: 9, chunkSize: 400, resolution: 45, skirtDepth: 0 }, // High detail close - increased range
-      { id: 1, maxRange: 11, chunkSize: 800, resolution: 40, skirtDepth: 0 }, // Medium detail
-      { id: 2, maxRange: 13, chunkSize: 1600, resolution: 25, skirtDepth: 0 }, // Lower detail
-      { id: 3, maxRange: 26, chunkSize: 3200, resolution: 5, skirtDepth: 0 }, // Lowest detail far
+      { id: 0, maxRange: 9, chunkSize: 800, resolution: 45, skirtDepth: 0 }, // High detail close - increased range
+      { id: 1, maxRange: 11, chunkSize: 1600, resolution: 40, skirtDepth: 0 }, // Medium detail
+      { id: 2, maxRange: 13, chunkSize: 3200, resolution: 25, skirtDepth: 0 }, // Lower detail
+      //{ id: 3, maxRange: 16, chunkSize: 6400, resolution: 5, skirtDepth: 0 }, // Lowest detail far
     ];
 
     this.maxRenderDistance =
@@ -120,17 +120,17 @@ export class ChunkTerrain {
     // Dynamic update threshold based on player speed
     let moveThreshold = 200; // Base threshold
     let maxChunksPerFrame = 6; // Base generation rate
-    
+
     if (window.game && window.game.player) {
       const playerSpeed = window.game.player.forwardSpeed;
-      
+
       // Adjust thresholds based on speed
       if (playerSpeed > 6000) {
         // Very high speed - moderate generation
         moveThreshold = 180;
         maxChunksPerFrame = 8;
       } else if (playerSpeed > 4000) {
-        // High speed - slightly increased generation  
+        // High speed - slightly increased generation
         moveThreshold = 200;
         maxChunksPerFrame = 6;
       } else if (playerSpeed > 2000) {
@@ -139,7 +139,7 @@ export class ChunkTerrain {
         maxChunksPerFrame = 4;
       }
     }
-    
+
     const isFirstUpdate = !isFinite(this.lastPlayerWorld.x);
 
     if (
@@ -150,11 +150,12 @@ export class ChunkTerrain {
       this.lastPlayerWorld.copy(playerWorld);
       this.buildQueue(playerWorld);
       this.unloadFar(playerWorld);
-      
+
       // Only run culling every few updates to reduce overhead
       if (!this._cullCounter) this._cullCounter = 0;
       this._cullCounter++;
-      if (this._cullCounter % 3 === 0) { // Every 3rd update
+      if (this._cullCounter % 3 === 0) {
+        // Every 3rd update
         this.cullInvisibleChunks(playerWorld);
       }
 
@@ -400,7 +401,7 @@ export class ChunkTerrain {
 
   buildQueue(playerWorld) {
     const queue = [];
-    
+
     // Get player direction for priority sorting when flying fast
     let playerForward = null;
     if (window.game && window.game.player && window.game.player.mesh) {
@@ -444,18 +445,41 @@ export class ChunkTerrain {
           const shouldUseLOD = lodIndex === bestLodIndex;
 
           if (shouldUseLOD) {
+            // Pre-filter chunks using pizza slice culling during generation
+            let shouldGenerate = true;
+
+            // Get camera direction for pre-filtering
+            if (this.camera && distanceToPlayer > 1000) {
+              if (!this._tempForward) this._tempForward = new THREE.Vector3();
+              this.camera.getWorldDirection(this._tempForward);
+
+              const dx = centerX - playerWorld.x;
+              const dz = centerZ - playerWorld.z;
+              const dotProduct =
+                (dx * this._tempForward.x + dz * this._tempForward.z) /
+                distanceToPlayer;
+
+              // Don't generate chunks that are more than 150 degrees behind/to side
+              shouldGenerate = dotProduct > -0.7; // More permissive angle
+            }
+
+            if (!shouldGenerate) {
+              continue; // Skip generating this chunk
+            }
+
             let priority = distanceToPlayer;
-            
+
             // Boost priority for chunks ahead when flying fast
             if (playerForward && window.game.player.forwardSpeed > 4000) {
               // Use direction without creating new vectors
               const dx = centerX - playerWorld.x;
               const dz = centerZ - playerWorld.z;
               const dist = Math.sqrt(dx * dx + dz * dz);
-              
+
               if (dist > 0) {
-                const forwardDot = (dx * playerForward.x + dz * playerForward.z) / dist;
-                
+                const forwardDot =
+                  (dx * playerForward.x + dz * playerForward.z) / dist;
+
                 // Chunks ahead get higher priority (lower value = higher priority)
                 if (forwardDot > 0.3) {
                   priority *= 0.5; // Much higher priority for forward chunks
@@ -464,7 +488,7 @@ export class ChunkTerrain {
                 }
               }
             }
-            
+
             queue.push({
               key,
               lod: lod.id,
@@ -663,36 +687,57 @@ export class ChunkTerrain {
     const player = window.game.player;
     const playerMesh = player.mesh;
 
-    // Get player's backward direction for culling chunks behind (reuse vector)
-    if (!this._backwardVector) {
-      this._backwardVector = new THREE.Vector3(0, 0, -1);
+    // Update camera frustum for accurate culling
+    this.camera.updateMatrixWorld();
+    this._tmpMatrix.multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse
+    );
+    this._tmpFrustum.setFromProjectionMatrix(this._tmpMatrix);
+
+    // Get camera forward direction for additional pizza slice culling
+    if (!this._forwardVector) {
+      this._forwardVector = new THREE.Vector3();
     }
-    this._backwardVector.set(0, 0, -1).applyQuaternion(playerMesh.quaternion);
+    this.camera.getWorldDirection(this._forwardVector);
 
     let culledCount = 0;
     let visibleCount = 0;
+    let frustumCulled = 0;
+    let angleCulled = 0;
 
     for (const [key, chunk] of this.chunks.entries()) {
       // Calculate chunk center position
       const chunkCenterX = chunk.cx * chunk.size + chunk.size / 2;
       const chunkCenterZ = chunk.cz * chunk.size + chunk.size / 2;
+      const chunkCenterY = 200; // Approximate terrain height
 
-      // Vector from player to chunk center (no vector objects)
+      // Create chunk center point for frustum testing
+      if (!this._chunkCenter) {
+        this._chunkCenter = new THREE.Vector3();
+      }
+      this._chunkCenter.set(chunkCenterX, chunkCenterY, chunkCenterZ);
+
+      // Test 1: Frustum culling (camera's actual viewing cone)
+      const inFrustum = this._tmpFrustum.containsPoint(this._chunkCenter);
+
+      // Test 2: Wide pizza slice angle culling (only for very distant chunks)
       const dx = chunkCenterX - playerWorld.x;
       const dz = chunkCenterZ - playerWorld.z;
       const distanceToChunk = Math.sqrt(dx * dx + dz * dz);
 
-      // Check if chunk is significantly behind the player
-      let dotProduct = 0;
-      if (distanceToChunk > 0) {
-        // Normalize and dot product manually
-        dotProduct = (dx * this._backwardVector.x + dz * this._backwardVector.z) / distanceToChunk;
+      let angleTest = true;
+      if (distanceToChunk > 2000) {
+        // Only apply angle culling for very distant chunks
+        const dotProduct =
+          (dx * this._forwardVector.x + dz * this._forwardVector.z) /
+          distanceToChunk;
+        // Cull chunks more than 140 degrees behind (very permissive)
+        angleTest = dotProduct > -0.8; // Allow ~143 degree cone
       }
 
-      // Cull chunks that are:
-      // 1. Behind the player (dot product > 0.3 means more than ~70 degrees behind)
-      // 2. Far enough away (> 1500 units) to avoid culling nearby terrain
-      const shouldCull = dotProduct > 0.3 && distanceToChunk > 1500;
+      // Prioritize frustum test - if it's in frustum, render it regardless of angle
+      const shouldCull = !inFrustum && !angleTest;
 
       if (chunk.mesh) {
         const wasVisible = chunk.mesh.visible;
@@ -700,15 +745,21 @@ export class ChunkTerrain {
 
         if (shouldCull && wasVisible) {
           culledCount++;
+          if (!inFrustum) frustumCulled++;
+          if (!angleTest) angleCulled++;
         } else if (!shouldCull) {
           visibleCount++;
         }
       }
     }
 
-    // Optional debug logging (uncomment to see culling stats)
-    // if (culledCount > 0) {
-    //   console.log(`🎭 Culled ${culledCount} chunks, ${visibleCount} visible`);
-    // }
+    // Debug logging every 60 frames (1 second at 60fps)
+    if (!this._cullDebugCounter) this._cullDebugCounter = 0;
+    this._cullDebugCounter++;
+    if (this._cullDebugCounter % 60 === 0) {
+      console.log(
+        `🍕 Pizza slice culling: ${culledCount} culled (${frustumCulled} frustum, ${angleCulled} angle), ${visibleCount} visible`
+      );
+    }
   }
 }

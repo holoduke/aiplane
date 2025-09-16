@@ -1,12 +1,18 @@
 import * as THREE from "three";
 // import CSM from "three-csm"; // Disabled due to shader compatibility issues
 import { ChunkTerrain } from "./ChunkTerrain.js";
+// import { QuadChunkTerrain } from "./QuadChunkTerrain.js"; // Temporarily disabled due to syntax error
+// import { LODTerrain } from "./LODTerrain.js"; // Has material cloning issues
+import { SimpleTerrain } from "./SimpleTerrain.js";
+import { FelixTerrain } from "./FelixTerrain.js";
 import { Player } from "./Player.js";
 import { InputManager } from "./InputManager.js";
 import { HUD } from "./HUD.js";
 import { Skybox } from "./Skybox.js";
 import { LensFlare } from "./LensFlare.js";
 import { TransparentWater } from "./TransparantWater.js";
+import { BonusManager } from "./BonusManager.js";
+import { EnemyManager } from "./EnemyManager.js";
 import Stats from "three/examples/jsm/libs/stats.module.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -24,6 +30,8 @@ export class Game {
     this.skybox = null;
     this.lensFlare = null;
     this.water = null;
+    this.bonusManager = null;
+    this.enemyManager = null;
     this.clock = new THREE.Clock();
     this.isRunning = false;
     this.gameStarted = false;
@@ -52,10 +60,18 @@ export class Game {
     this.setupPostProcessing();
 
     // Create terrain with camera reference
+    // Use the most stable terrain system for now
     this.terrain = new ChunkTerrain(this.scene, this.camera);
+    console.log("🌍 Using legacy ChunkTerrain system - most stable");
 
     this.player = new Player(this.scene, this.camera);
     this.hud = new HUD();
+
+    // Initialize bonus system after player is created
+    this.bonusManager = new BonusManager(this.scene, this.player);
+
+    // Initialize enemy system after player is created
+    this.enemyManager = new EnemyManager(this.scene, this.player, this.terrain);
 
     // Create skybox before lighting
     this.skybox = new Skybox(this.scene, this.renderer);
@@ -77,7 +93,8 @@ export class Game {
     //     this.water.setClearWater(); // Start with clear water
     //   }
     // });
-    this.setupWater();
+    // Water system disabled
+    // this.setupWater();
 
     // Don't create input manager until game starts
 
@@ -326,33 +343,33 @@ export class Game {
       }
     };
 
-    // Add water debug functions
-    window.setWaterClear = () => {
-      if (this.water) {
-        this.water.setClearWater();
-      }
-    };
-
-    window.setWaterDeep = () => {
-      if (this.water) {
-        this.water.setDeepWater();
-      }
-    };
-
-    window.setWaterTropical = () => {
-      if (this.water) {
-        this.water.setTropicalWater();
-      }
-    };
-
-    window.toggleWater = () => {
-      if (this.water && this.water.waterMesh) {
-        this.water.waterMesh.visible = !this.water.waterMesh.visible;
-        console.log(
-          `🌊 Water ${this.water.waterMesh.visible ? "enabled" : "disabled"}`
-        );
-      }
-    };
+    // Water debug functions disabled
+    // window.setWaterClear = () => {
+    //   if (this.water) {
+    //     this.water.setClearWater();
+    //   }
+    // };
+    //
+    // window.setWaterDeep = () => {
+    //   if (this.water) {
+    //     this.water.setDeepWater();
+    //   }
+    // };
+    //
+    // window.setWaterTropical = () => {
+    //   if (this.water) {
+    //     this.water.setTropicalWater();
+    //   }
+    // };
+    //
+    // window.toggleWater = () => {
+    //   if (this.water && this.water.waterMesh) {
+    //     this.water.waterMesh.visible = !this.water.waterMesh.visible;
+    //     console.log(
+    //       `🌊 Water ${this.water.waterMesh.visible ? "enabled" : "disabled"}`
+    //     );
+    //   }
+    // };
 
     this.boundAnimate();
   }
@@ -409,10 +426,10 @@ export class Game {
         this.lensFlare.update(deltaTime, this.sunLight.position, this.terrain);
       }
 
-      // Update water in menu phase too
-      if (this.water) {
-        //this.water.update(deltaTime, this.camera);
-      }
+      // Water system disabled
+      // if (this.water) {
+      //   this.water.update(deltaTime, this.camera);
+      // }
 
       return;
     }
@@ -424,6 +441,16 @@ export class Game {
     this.terrain.update(this.player.position);
     this.hud.update(this.player);
 
+    // Update bonus manager
+    if (this.bonusManager) {
+      //this.bonusManager.update(deltaTime);
+    }
+
+    // Update enemy manager
+    if (this.enemyManager) {
+      //this.enemyManager.update(deltaTime);
+    }
+
     // Update skybox
     if (this.skybox) {
       this.skybox.update(deltaTime, this.player.position);
@@ -434,10 +461,10 @@ export class Game {
       this.lensFlare.update(deltaTime, this.sunLight.position, this.terrain);
     }
 
-    // Update water
-    if (this.water) {
-      //this.water.update(deltaTime, this.camera);
-    }
+    // Water system disabled
+    // if (this.water) {
+    //   this.water.update(deltaTime, this.camera);
+    // }
 
     // Static daylight - no updates needed
     this.updateShadowCamera();

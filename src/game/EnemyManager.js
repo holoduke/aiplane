@@ -1,343 +1,309 @@
-import * as THREE from 'three'
+import * as THREE from "three";
+import { FlyingOrb } from "./FlyingOrb.js";
+import { OrbSnake } from "./OrbSnake.js";
+import { PurpleCylinder } from "./PurpleCylinder.js";
+import { GroundTurret } from "./GroundTurret.js";
 
 export class EnemyManager {
-  constructor(scene, levelLength = 10000) {
-    this.scene = scene
-    this.enemies = []
-    this.turrets = []
-    this.spawnTimer = 0
-    this.spawnInterval = 2.5
-    this.maxEnemies = 8
-    this.levelLength = levelLength
-    this.levelWidth = 10000  // 10km x 10km terrain
-    this.lastSpawnZ = -4000
-    this.staticTurrets = []
-    
-    this.init()
+  constructor(scene, player, terrain) {
+    this.scene = scene;
+    this.player = player;
+    this.terrain = terrain;
+    this.enemies = [];
+
+    // Spawn settings
+    this.spawnDistance = 30000; // Distance ahead to spawn enemies (much further)
+    this.spawnRadius = 1500; // How far left/right from flight path
+    this.maxEnemies = 15; // Maximum enemies in world at once (to allow big waves)
+    this.spawnTimer = 0;
+    this.spawnInterval = 500; // Spawn every 6 seconds initially (much more frequent)
+    this.lastSpawnZ = 0;
+
+    // Difficulty scaling
+    this.difficultyLevel = 1;
+    this.enemiesKilled = 0;
+    this.playerScore = 0;
+
+    console.log("⚔️ EnemyManager initialized");
   }
 
-  init() {
-    this.createLevelTurrets()
-  }
+  update(deltaTime) {
+    // Update spawn timer
+    this.spawnTimer += deltaTime * 1000;
 
-  createLevelTurrets() {
-    // Instead of creating all turrets at once, we'll create them dynamically
-    // Store turret positions for streaming creation
-    this.turretPositions = []
-    const turretSpacing = 1200
-    const numTurrets = this.levelLength / turretSpacing
-    
-    for (let i = 0; i < numTurrets; i++) {
-      const z = (i * turretSpacing) - this.levelLength / 2
-      const x = (Math.random() - 0.5) * (this.levelWidth - 300)
-      
-      this.turretPositions.push({ x, z, created: false })
-    }
-  }
+    // Get player position
+    const playerPos = this.player.mesh.position.clone();
 
-  getTerrainHeight(x, z) {
-    const scale1 = 0.01
-    const scale2 = 0.005
-    const scale3 = 0.002
-    
-    let height = 0
-    height += Math.sin(x * scale1) * Math.cos(z * scale1) * 50
-    height += Math.sin(x * scale2) * Math.cos(z * scale2) * 100
-    height += Math.sin(x * scale3) * Math.cos(z * scale3) * 200
-    
-    return height
-  }
-
-  createTurret(x, y, z) {
-    const turretGroup = new THREE.Group()
-
-    const baseGeometry = new THREE.CylinderGeometry(25, 30, 15, 8)
-    const baseMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x444444,
-      metalness: 0.8,
-      roughness: 0.3
-    })
-    const base = new THREE.Mesh(baseGeometry, baseMaterial)
-    base.castShadow = true
-    base.receiveShadow = true
-    turretGroup.add(base)
-
-    const turretGeometry = new THREE.CylinderGeometry(8, 12, 20, 6)
-    const turretMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x666666,
-      metalness: 0.7,
-      roughness: 0.4
-    })
-    const turret = new THREE.Mesh(turretGeometry, turretMaterial)
-    turret.position.y = 17
-    turret.castShadow = true
-    turretGroup.add(turret)
-
-    const barrelGeometry = new THREE.CylinderGeometry(3, 3, 40, 8)
-    const barrelMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x333333,
-      metalness: 0.9,
-      roughness: 0.2
-    })
-    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial)
-    barrel.rotation.x = Math.PI / 2
-    barrel.position.set(0, 25, 20)
-    barrel.castShadow = true
-    turretGroup.add(barrel)
-
-    const glowGeometry = new THREE.SphereGeometry(2, 8, 8)
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.8
-    })
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial)
-    glow.position.set(0, 25, 40)
-    turretGroup.add(glow)
-
-    turretGroup.position.set(x, y, z)
-    
-    turretGroup.userData = {
-      type: 'turret',
-      health: 50,
-      shootTimer: Math.random() * 3,
-      shootInterval: 2 + Math.random() * 2,
-      range: 800,
-      turretMesh: turret,
-      barrelMesh: barrel,
-      glowMesh: glow
+    // Spawn new enemies if needed
+    if (this.shouldSpawnEnemy(playerPos)) {
+      this.spawnEnemy(playerPos);
     }
 
-    this.turrets.push(turretGroup)
-    this.scene.add(turretGroup)
-    
-    return turretGroup
-  }
-
-  createEnemyPlane(playerZ) {
-    const planeGroup = new THREE.Group()
-
-    const fuselageGeometry = new THREE.CylinderGeometry(6, 4, 60, 8)
-    const fuselageMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x660000,
-      metalness: 0.7,
-      roughness: 0.3
-    })
-    const fuselage = new THREE.Mesh(fuselageGeometry, fuselageMaterial)
-    fuselage.rotation.x = Math.PI / 2
-    fuselage.castShadow = true
-    planeGroup.add(fuselage)
-
-    const wingGeometry = new THREE.BoxGeometry(80, 3, 20)
-    const wingMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x550000,
-      metalness: 0.6,
-      roughness: 0.4
-    })
-    const leftWing = new THREE.Mesh(wingGeometry, wingMaterial)
-    leftWing.position.set(-40, 0, -5)
-    leftWing.castShadow = true
-    planeGroup.add(leftWing)
-
-    const rightWing = new THREE.Mesh(wingGeometry, wingMaterial)
-    rightWing.position.set(40, 0, -5)
-    rightWing.castShadow = true
-    planeGroup.add(rightWing)
-
-    const engineGeometry = new THREE.CylinderGeometry(4, 6, 20, 8)
-    const engineMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x990000,
-      emissive: 0x220000
-    })
-    const engine = new THREE.Mesh(engineGeometry, engineMaterial)
-    engine.rotation.x = Math.PI / 2
-    engine.position.set(0, 0, -40)
-    engine.castShadow = true
-    planeGroup.add(engine)
-
-    const spawnSide = Math.random() < 0.5 ? -1 : 1
-    const x = spawnSide * (this.levelWidth / 2 + 200)
-    const z = playerZ + 800 + Math.random() * 400
-    const y = 250 + Math.random() * 150
-
-    planeGroup.position.set(x, y, z)
-
-    planeGroup.userData = {
-      type: 'plane',
-      health: 30,
-      speed: 300 + Math.random() * 100,
-      shootTimer: Math.random() * 2,
-      shootInterval: 1.5 + Math.random(),
-      range: 800,
-      movePattern: Math.random() < 0.5 ? 'straight' : 'weave',
-      targetX: -x * 0.5,
-      originalX: x
-    }
-
-    this.enemies.push(planeGroup)
-    this.scene.add(planeGroup)
-  }
-
-  update(deltaTime, playerPosition) {
-    // Spawn enemies ahead of player
-    this.spawnTimer += deltaTime
-    if (this.spawnTimer >= this.spawnInterval && this.enemies.length < this.maxEnemies) {
-      if (playerPosition.z > this.lastSpawnZ + 800) {
-        this.createEnemyPlane(playerPosition.z)
-        this.lastSpawnZ = playerPosition.z
-        this.spawnTimer = 0
-      }
-    }
-
-    // Create turrets near player position
-    this.manageTurrets(playerPosition)
-
-    this.updateEnemyPlanes(deltaTime, playerPosition)
-    this.updateTurrets(deltaTime, playerPosition)
-    this.cleanupDistantEnemies(playerPosition)
-  }
-
-  manageTurrets(playerPosition) {
-    const renderDistance = 2000
-    
-    this.turretPositions.forEach((turretPos, index) => {
-      const distanceToPlayer = Math.abs(turretPos.z - playerPosition.z)
-      
-      if (!turretPos.created && distanceToPlayer < renderDistance) {
-        // Create turret
-        const y = this.getTerrainHeight(turretPos.x, turretPos.z) + 20
-        const turret = this.createTurret(turretPos.x, y, turretPos.z)
-        turretPos.created = true
-        turretPos.turret = turret
-      } else if (turretPos.created && distanceToPlayer > renderDistance * 2) {
-        // Remove distant turret
-        if (turretPos.turret) {
-          this.removeTurret(turretPos.turret)
-          turretPos.created = false
-          turretPos.turret = null
-        }
-      }
-    })
-  }
-
-  updateEnemyPlanes(deltaTime, playerPosition) {
-    this.enemies.forEach(enemy => {
-      if (enemy.userData.type !== 'plane') return
-
-      if (enemy.userData.movePattern === 'straight') {
-        const direction = new THREE.Vector3().subVectors(enemy.userData.targetX, enemy.position.x, 0).normalize()
-        enemy.position.add(direction.multiplyScalar(enemy.userData.speed * deltaTime))
-      } else {
-        enemy.position.x += Math.sin(Date.now() * 0.001 + enemy.position.z * 0.01) * 100 * deltaTime
-      }
-      
-      const distanceToPlayer = enemy.position.distanceTo(playerPosition)
-      if (distanceToPlayer < enemy.userData.range) {
-        enemy.userData.shootTimer -= deltaTime
-        if (enemy.userData.shootTimer <= 0) {
-          this.enemyShoot(enemy, playerPosition)
-          enemy.userData.shootTimer = enemy.userData.shootInterval
-        }
-      }
-    })
-  }
-
-  cleanupDistantEnemies(playerPosition) {
+    // Update all enemies
     for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const enemy = this.enemies[i]
-      if (enemy.position.z < playerPosition.z - 1000) {
-        this.removeEnemy(enemy)
-      }
-    }
-  }
+      const enemy = this.enemies[i];
 
-  updateTurrets(deltaTime, playerPosition) {
-    this.turrets.forEach(turret => {
-      const distanceToPlayer = turret.position.distanceTo(playerPosition)
-      
-      if (distanceToPlayer < turret.userData.range) {
-        const direction = new THREE.Vector3().subVectors(playerPosition, turret.position)
-        direction.y = 0
-        direction.normalize()
-        
-        const angle = Math.atan2(direction.x, direction.z)
-        turret.userData.turretMesh.rotation.y = angle
-        
-        const pitchAngle = Math.atan2(
-          playerPosition.y - turret.position.y,
-          Math.sqrt(direction.x * direction.x + direction.z * direction.z)
-        )
-        turret.userData.barrelMesh.rotation.x = Math.PI / 2 - pitchAngle
-        
-        turret.userData.shootTimer -= deltaTime
-        if (turret.userData.shootTimer <= 0) {
-          this.turretShoot(turret, playerPosition)
-          turret.userData.shootTimer = turret.userData.shootInterval
+      // Update enemy
+      enemy.update(deltaTime, playerPos);
+
+      // Check if enemy is too far behind
+      const distanceBehind = playerPos.z - enemy.getPosition().z;
+      if (distanceBehind > 3000 || enemy.isDestroyed()) {
+        if (enemy.isDestroyed()) {
+          this.enemiesKilled++;
+          this.playerScore += enemy.getPoints();
+          console.log(`💀 Enemy destroyed! Score: +${enemy.getPoints()}`);
         }
-        
-        turret.userData.glowMesh.material.opacity = 0.8 + Math.sin(Date.now() * 0.01) * 0.2
+
+        enemy.destroy();
+        this.enemies.splice(i, 1);
+        continue;
+      }
+
+      // Check collision with player
+      if (enemy.checkCollision(playerPos, 80)) {
+        // OrbSnake causes instant death
+        if (enemy.constructor.name === "OrbSnake") {
+          console.log("🐍💀 Player hit orb snake - INSTANT DEATH!");
+          this.player.takeDamage(9999); // Instant death
+        } else if (enemy.canAttack()) {
+          const damage = enemy.attack();
+          this.player.takeDamage(damage);
+          console.log(`💥 Player hit for ${damage} damage!`);
+        }
+      }
+    }
+
+    // Update difficulty
+    this.updateDifficulty();
+  }
+
+  shouldSpawnEnemy(playerPos) {
+    // Don't spawn if we have too many enemies
+    if (this.enemies.length >= this.maxEnemies) {
+      return false;
+    }
+
+    // Don't spawn too frequently
+    if (this.spawnTimer < this.spawnInterval) {
+      return false;
+    }
+
+    // Don't spawn too close to last spawn point
+    if (playerPos.z - this.lastSpawnZ < 2000) {
+      return false;
+    }
+
+    return true;
+  }
+
+  spawnEnemy(playerPos) {
+    // Reset spawn timer
+    this.spawnTimer = 0;
+
+    // Calculate spawn position ahead of player
+    const spawnDistance = this.spawnDistance + Math.random() * 2000; // 8-10km ahead
+    const spawnZ = playerPos.z + spawnDistance;
+
+    // Decide if this should be a wave spawn (30% chance)
+    const isWaveSpawn = Math.random() < 0.3;
+    const enemiesToSpawn = isWaveSpawn ? 5 + Math.floor(Math.random() * 6) : 1; // 5-10 enemies or just 1
+
+    console.log(
+      `👹 Spawning ${enemiesToSpawn} enemies${isWaveSpawn ? " (WAVE!)" : ""}`
+    );
+
+    for (let i = 0; i < enemiesToSpawn; i++) {
+      // Random position left/right of flight path
+      const sideOffset = (Math.random() - 0.5) * this.spawnRadius * 2;
+      const spawnX = playerPos.x + sideOffset;
+
+      // Spawn at similar height to player with some variation
+      const spawnY = playerPos.y + (Math.random() - 0.5) * 200;
+
+      // For wave spawns, spread them out a bit more
+      const waveSpread = isWaveSpawn ? (i - enemiesToSpawn / 2) * 400 : 0;
+      const spawnPosition = new THREE.Vector3(
+        spawnX + waveSpread,
+        spawnY,
+        spawnZ + (Math.random() - 0.5) * 1000
+      );
+
+      // Create enemy based on chance
+      let enemy;
+
+      const randEnemy = Math.random();
+      if (randEnemy < 0.4) {
+        // 40% chance for orb snake (deadly enemy)
+        const snakeLength = 15 + Math.floor(Math.random() * 10); // 15-24 segments (much longer)
+        enemy = new OrbSnake(this.scene, spawnPosition, snakeLength);
+        // } else if (randEnemy < 0.65) {
+        //   // 25% chance for purple cylinder
+        //   enemy = new PurpleCylinder(this.scene, spawnPosition);
+      } else if (randEnemy < 0.85) {
+        // 45% chance for ground turret
+        // Spawn turrets closer to the side path for ground placement
+        const groundPos = spawnPosition.clone();
+        groundPos.y = 0; // Ground level
+        enemy = new GroundTurret(this.scene, groundPos, this.terrain);
       } else {
-        turret.userData.glowMesh.material.opacity = 0.3
+        // 15% chance for single flying orb
+        enemy = new FlyingOrb(this.scene, spawnPosition);
       }
-    })
+
+      this.enemies.push(enemy);
+
+      console.log(
+        `👹 Enemy ${
+          i + 1
+        }/${enemiesToSpawn} spawned at (${spawnPosition.x.toFixed(
+          0
+        )}, ${spawnPosition.y.toFixed(0)}, ${spawnPosition.z.toFixed(0)})`
+      );
+    }
+
+    this.lastSpawnZ = spawnZ;
   }
 
-  enemyShoot(enemy, targetPosition) {
-    const direction = new THREE.Vector3().subVectors(targetPosition, enemy.position).normalize()
-    
-    if (window.game && window.game.bulletManager) {
-      window.game.bulletManager.createEnemyBullet(
-        enemy.position.clone(),
-        direction,
-        500
-      )
+  updateDifficulty() {
+    // Increase difficulty based on enemies killed
+    const newDifficultyLevel = Math.floor(this.enemiesKilled / 5) + 1;
+
+    if (newDifficultyLevel > this.difficultyLevel) {
+      this.difficultyLevel = newDifficultyLevel;
+
+      // Adjust spawn settings
+      this.maxEnemies = Math.min(20, 15 + Math.floor(this.difficultyLevel)); // More enemies at higher difficulty
+      this.spawnInterval = Math.max(2000, 6000 - this.difficultyLevel * 400); // Faster spawning as difficulty increases
+
+      console.log(`📈 Difficulty increased to level ${this.difficultyLevel}`);
     }
   }
 
-  turretShoot(turret, targetPosition) {
-    const barrelEnd = new THREE.Vector3(0, 25, 40)
-    barrelEnd.applyQuaternion(turret.quaternion)
-    barrelEnd.add(turret.position)
-    
-    const direction = new THREE.Vector3().subVectors(targetPosition, barrelEnd).normalize()
-    
-    if (window.game && window.game.bulletManager) {
-      window.game.bulletManager.createEnemyBullet(
-        barrelEnd,
-        direction,
-        600
-      )
-    }
+  // Method to damage enemies (called from weapon systems)
+  damageEnemiesInArea(position, radius, damage) {
+    const hits = [];
 
-    turret.userData.glowMesh.material.opacity = 1.0
-    setTimeout(() => {
-      if (turret.userData.glowMesh) {
-        turret.userData.glowMesh.material.opacity = 0.3
+    console.log(
+      `🎯 Checking weapon hit at position:`,
+      position,
+      `radius: ${radius}, damage: ${damage}`
+    );
+    console.log(`🎯 Number of enemies to check: ${this.enemies.length}`);
+
+    for (const enemy of this.enemies) {
+      if (enemy.isDestroyed()) continue;
+
+      const enemyPos = enemy.getPosition();
+      const distance = enemyPos.distanceTo(position);
+
+      console.log(`🎯 Enemy at:`, enemyPos, `distance: ${distance.toFixed(2)}`);
+
+      if (distance <= radius) {
+        console.log(`💥 HIT! Enemy hit by weapon!`);
+        const destroyed = enemy.takeDamage(damage);
+        hits.push({
+          enemy: enemy,
+          destroyed: destroyed,
+          points: destroyed ? enemy.getPoints() : 0,
+        });
+
+        // Create visual hit effect
+        this.createHitEffect(enemyPos);
       }
-    }, 200)
-  }
-
-  removeEnemy(enemy) {
-    const index = this.enemies.indexOf(enemy)
-    if (index > -1) {
-      this.enemies.splice(index, 1)
-      this.scene.remove(enemy)
     }
+
+    console.log(`🎯 Total hits: ${hits.length}`);
+    return hits;
   }
 
-  removeTurret(turret) {
-    const index = this.turrets.indexOf(turret)
-    if (index > -1) {
-      this.turrets.splice(index, 1)
-      this.scene.remove(turret)
+  createHitEffect(position) {
+    // Create bright explosion effect at hit location
+    const hitEffect = new THREE.Group();
+
+    // Main flash
+    const flashGeometry = new THREE.SphereGeometry(15, 8, 8);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    hitEffect.add(flash);
+
+    // Spark particles
+    for (let i = 0; i < 8; i++) {
+      const sparkGeometry = new THREE.SphereGeometry(2, 4, 4);
+      const sparkMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff8800,
+        transparent: true,
+        opacity: 0.8,
+      });
+
+      const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
+      spark.position.set(
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 30
+      );
+
+      hitEffect.add(spark);
     }
+
+    hitEffect.position.copy(position);
+    this.scene.add(hitEffect);
+
+    // Animate and remove effect
+    let animationTime = 0;
+    const animateEffect = () => {
+      animationTime += 16; // ~60fps
+
+      const progress = animationTime / 300; // 300ms effect
+      flash.material.opacity = 1 - progress;
+      flash.scale.setScalar(1 + progress * 2);
+
+      hitEffect.children.forEach((child, index) => {
+        if (index > 0) {
+          // Skip the main flash
+          child.material.opacity = 1 - progress;
+          child.position.multiplyScalar(1.05); // Expand outward
+        }
+      });
+
+      if (progress < 1) {
+        requestAnimationFrame(animateEffect);
+      } else {
+        this.scene.remove(hitEffect);
+      }
+    };
+
+    animateEffect();
   }
 
-  getEnemies() {
-    return [...this.enemies, ...this.turrets]
+  getEnemyCount() {
+    return this.enemies.length;
   }
 
-  getAllTargets() {
-    return this.getEnemies()
+  getDifficultyLevel() {
+    return this.difficultyLevel;
+  }
+
+  getKillCount() {
+    return this.enemiesKilled;
+  }
+
+  getScore() {
+    return this.playerScore;
+  }
+
+  // Clean up all enemies
+  cleanup() {
+    for (const enemy of this.enemies) {
+      enemy.destroy();
+    }
+    this.enemies = [];
+    console.log("🧹 EnemyManager cleaned up");
   }
 }

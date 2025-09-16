@@ -29,7 +29,7 @@ export class LensFlare {
         distance: 0.0, 
         scale: 1.0, 
         color: new THREE.Color(1.0, 0.9, 0.7),
-        opacity: 0.8,
+        opacity: 0.3,
         type: 'sun'
       },
       // Secondary flares at various distances along the lens axis
@@ -37,42 +37,42 @@ export class LensFlare {
         distance: 0.1, 
         scale: 0.3, 
         color: new THREE.Color(1.0, 0.5, 0.2),
-        opacity: 0.4,
+        opacity: 0.15,
         type: 'ghost'
       },
       { 
         distance: 0.2, 
         scale: 0.15, 
         color: new THREE.Color(0.8, 1.0, 0.3),
-        opacity: 0.3,
+        opacity: 0.1,
         type: 'ring'
       },
       { 
         distance: 0.4, 
         scale: 0.4, 
         color: new THREE.Color(0.4, 0.8, 1.0),
-        opacity: 0.25,
+        opacity: 0.1,
         type: 'ghost'
       },
       { 
         distance: 0.6, 
         scale: 0.2, 
         color: new THREE.Color(1.0, 0.3, 0.6),
-        opacity: 0.35,
+        opacity: 0.12,
         type: 'ring'
       },
       { 
         distance: 0.8, 
         scale: 0.6, 
         color: new THREE.Color(0.9, 0.9, 0.3),
-        opacity: 0.2,
+        opacity: 0.08,
         type: 'ghost'
       },
       { 
         distance: 1.0, 
         scale: 0.25, 
         color: new THREE.Color(0.6, 0.9, 1.0),
-        opacity: 0.3,
+        opacity: 0.1,
         type: 'ring'
       },
       // Additional smaller flares
@@ -80,14 +80,14 @@ export class LensFlare {
         distance: 1.2, 
         scale: 0.1, 
         color: new THREE.Color(1.0, 0.8, 0.4),
-        opacity: 0.4,
+        opacity: 0.12,
         type: 'ghost'
       },
       { 
         distance: 1.5, 
         scale: 0.35, 
         color: new THREE.Color(0.7, 0.4, 1.0),
-        opacity: 0.15,
+        opacity: 0.06,
         type: 'ring'
       }
     ];
