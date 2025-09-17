@@ -12,7 +12,7 @@ export class LensFlare {
     this.raycaster = new THREE.Raycaster();
     this.occluded = false;
     this.visibility = 0.0;
-    
+
     this.init();
   }
 
@@ -25,13 +25,55 @@ export class LensFlare {
 
   createLensFlareElements() {
     const flareConfigs = [
-      { distance: 0.0, size: 2200, color: new THREE.Color(1.0, 0.95, 0.8), opacity: 0.8, type: "sun" },
-      { distance: 0.25, size: 1200, color: new THREE.Color(1.0, 0.6, 0.3), opacity: 0.35, type: "ghost" },
-      { distance: 0.45, size: 900, color: new THREE.Color(0.7, 1.0, 0.5), opacity: 0.25, type: "ring" },
-      { distance: 0.75, size: 1500, color: new THREE.Color(0.5, 0.8, 1.0), opacity: 0.25, type: "ghost" },
-      { distance: 1.05, size: 600, color: new THREE.Color(1.0, 0.4, 0.7), opacity: 0.28, type: "ring" },
-      { distance: 1.35, size: 800, color: new THREE.Color(0.9, 0.9, 0.3), opacity: 0.22, type: "ghost" },
-      { distance: 1.65, size: 500, color: new THREE.Color(0.7, 0.4, 1.0), opacity: 0.18, type: "ring" },
+      {
+        distance: 0.0,
+        size: 2200,
+        color: new THREE.Color(1.0, 0.95, 0.8),
+        opacity: 0.8,
+        type: "sun",
+      },
+      {
+        distance: 0.25,
+        size: 1200,
+        color: new THREE.Color(1.0, 0.6, 0.3),
+        opacity: 0.35,
+        type: "ghost",
+      },
+      {
+        distance: 0.45,
+        size: 900,
+        color: new THREE.Color(0.7, 1.0, 0.5),
+        opacity: 0.25,
+        type: "ring",
+      },
+      {
+        distance: 0.75,
+        size: 1500,
+        color: new THREE.Color(0.5, 0.8, 1.0),
+        opacity: 0.25,
+        type: "ghost",
+      },
+      {
+        distance: 1.05,
+        size: 600,
+        color: new THREE.Color(1.0, 0.4, 0.7),
+        opacity: 0.28,
+        type: "ring",
+      },
+      {
+        distance: 1.35,
+        size: 800,
+        color: new THREE.Color(0.9, 0.9, 0.3),
+        opacity: 0.22,
+        type: "ghost",
+      },
+      {
+        distance: 1.65,
+        size: 500,
+        color: new THREE.Color(0.7, 0.4, 1.0),
+        opacity: 0.18,
+        type: "ring",
+      },
     ];
 
     flareConfigs.forEach((config) => {
@@ -50,11 +92,11 @@ export class LensFlare {
 
   createFlareElement(config) {
     let geometry;
-    
+
     // Create different geometries for different flare types
-    if (config.type === 'sun') {
+    if (config.type === "sun") {
       geometry = new THREE.CircleGeometry(1, 48);
-    } else if (config.type === 'ring') {
+    } else if (config.type === "ring") {
       geometry = new THREE.RingGeometry(0.6, 1.0, 48);
     } else {
       geometry = new THREE.CircleGeometry(1, 32);
@@ -66,7 +108,7 @@ export class LensFlare {
         color: { value: config.color },
         opacity: { value: config.opacity },
         center: { value: new THREE.Vector2(0.5, 0.5) },
-        time: { value: 0.0 }
+        time: { value: 0.0 },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -88,19 +130,25 @@ export class LensFlare {
           
           float alpha = opacity;
           
-          ${config.type === 'sun' ? `
+          ${
+            config.type === "sun"
+              ? `
             // Sun flare - bright center with soft falloff
             alpha *= (1.0 - smoothstep(0.0, 0.5, dist));
             alpha *= (1.0 + 0.1 * sin(time * 2.0 + dist * 10.0)); // Subtle shimmer
-          ` : config.type === 'ring' ? `
+          `
+              : config.type === "ring"
+              ? `
             // Ring flare
             float ringDist = abs(dist - 0.3);
             alpha *= (1.0 - smoothstep(0.0, 0.2, ringDist));
-          ` : `
+          `
+              : `
             // Ghost flare - soft circular gradient
             alpha *= (1.0 - smoothstep(0.1, 0.4, dist));
             alpha *= (0.8 + 0.2 * sin(time * 3.0 + dist * 15.0)); // Subtle variation
-          `}
+          `
+          }
           
           gl_FragColor = vec4(color, alpha);
         }
@@ -108,7 +156,7 @@ export class LensFlare {
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthTest: false,
-      depthWrite: false
+      depthWrite: false,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
@@ -136,15 +184,6 @@ export class LensFlare {
     // Check if sun is behind camera (remove restrictive screen bounds check)
     const isBehindCamera = sunScreenPos.z > 1.0;
 
-    // Only log occasionally to reduce spam
-    const shouldLog = Math.random() < 0.01; // 1% chance per frame
-
-    if (shouldLog) {
-      console.log(`🔥 Lens flare debug:
-        Sun screen pos: ${sunScreenPos.x.toFixed(2)}, ${sunScreenPos.y.toFixed(2)}, ${sunScreenPos.z.toFixed(2)}
-        Behind camera: ${isBehindCamera}`);
-    }
-
     if (isBehindCamera) {
       this.lensFlareGroup.visible = false;
       return;
@@ -161,13 +200,24 @@ export class LensFlare {
     const cameraDirection = new THREE.Vector3(0, 0, -1);
     cameraDirection.applyQuaternion(this.camera.quaternion);
 
-    const sunDirection = this.sunPosition.clone().sub(this.camera.position).normalize();
+    const sunDirection = this.sunPosition
+      .clone()
+      .sub(this.camera.position)
+      .normalize();
     const sunAngle = cameraDirection.dot(sunDirection);
 
-    let targetVisibility = THREE.MathUtils.clamp((sunAngle + 0.2) / 1.2, 0.0, 1.0);
+    let targetVisibility = THREE.MathUtils.clamp(
+      (sunAngle + 0.2) / 1.2,
+      0.0,
+      1.0
+    );
     if (sunDirection.z < -0.05) targetVisibility = 0.0;
     const lerpFactor = 1 - Math.exp(-deltaTime * 6);
-    this.visibility = THREE.MathUtils.lerp(this.visibility, targetVisibility, lerpFactor);
+    this.visibility = THREE.MathUtils.lerp(
+      this.visibility,
+      targetVisibility,
+      lerpFactor
+    );
     this.visibility = THREE.MathUtils.clamp(this.visibility, 0.0, 1.0);
 
     if (this.visibility <= 0.02) {
@@ -268,12 +318,12 @@ export class LensFlare {
   cleanup() {
     if (this.lensFlareGroup) {
       this.scene.remove(this.lensFlareGroup);
-      
-      this.flareElements.forEach(element => {
+
+      this.flareElements.forEach((element) => {
         element.mesh.geometry.dispose();
         element.mesh.material.dispose();
       });
-      
+
       this.flareElements = [];
     }
   }
