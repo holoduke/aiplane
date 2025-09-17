@@ -1,3 +1,6 @@
+precision highp float;
+precision highp sampler2D;
+
 uniform float uScale;
 uniform sampler2D uHeightData;
 uniform vec3 uFogColor;

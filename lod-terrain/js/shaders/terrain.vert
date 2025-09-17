@@ -1,3 +1,6 @@
+precision highp float;
+precision highp sampler2D;
+
 uniform vec3 uGlobalOffset;
 uniform sampler2D uHeightData;
 uniform vec2 uTileOffset;
