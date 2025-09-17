@@ -575,7 +575,7 @@ class TerrainApp {
     if (this.introActive) {
       const radius = 900 + 65 * Math.sin(this.introElapsed * 0.45);
       const angle = this.introElapsed * 0.18;
-      const height = 50 + 55 * Math.sin(this.introElapsed * 0.2);
+      const height = 150 + 55 * Math.sin(this.introElapsed * 0.2);
       const lookOrbit = 120 * Math.sin(this.introElapsed * 0.6);
 
       camera.position.set(
