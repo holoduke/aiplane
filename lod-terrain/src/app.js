@@ -219,8 +219,8 @@ export const app = {
       color: 0xffff88, // Bright yellow-white for glow effect
       wireframe: false,
       fog: false,
-      depthTest: false,
-      depthWrite: false,
+      depthTest: true,
+      depthWrite: true,
       transparent: true,
       opacity: 1.0,
       blending: THREE.AdditiveBlending,
@@ -229,8 +229,8 @@ export const app = {
     // Make the sun bright enough for bloom
     testSun2Material.color.multiplyScalar(2.0);
     app.sunMesh = new THREE.Mesh(testSun2Geometry, testSun2Material);
-    app.sunMesh.renderOrder = 9997;
-    app.sunMesh.frustumCulled = false;
+    //app.sunMesh.renderOrder = 9997;
+    app.sunMesh.frustumCulled = true;
     app.sunMesh.position.set(
       camera.position.x + 700,
       camera.position.y,
@@ -270,7 +270,7 @@ export const app = {
       }
 
       const origin = app.center ? app.center.clone() : camera.position.clone();
-      const sunDistance = 12000;
+      const sunDistance = 5000;
       app.sunWorldPosition
         .copy(origin)
         .add(app.sunDirection.clone().multiplyScalar(sunDistance));
@@ -316,7 +316,10 @@ export const app = {
 
     // Atmospheric sphere overlay
     app.sky2 = new THREE.Mesh(geometry.sky2, material.atmosphere);
-    app.sky2.renderOrder = -100; // Render well before everything else
+    app.sky2.renderOrder = 10000; // Render well before everything else
+    // app.sky.depthTest = false;
+    // app.sky.occluded = false;
+    // app.sky.frustumCulled = false;
     scene.add(app.sky2);
 
     if (!scene.fog) {
@@ -1051,6 +1054,13 @@ export const app = {
 
     if (app.lensFlare) {
       app.lensFlare.update(deltaTime, app.sunWorldPosition, app.terrain);
+      if (app.sunMesh) {
+        const visible =
+          app.currentSunIntensity > 0.02 && !app.lensFlare.occluded;
+        app.sunMesh.visible = visible;
+      }
+    } else if (app.sunMesh) {
+      app.sunMesh.visible = app.currentSunIntensity > 0.02;
     }
 
     _hudEl.textContent = `Camera: ${camera.position.x.toFixed(

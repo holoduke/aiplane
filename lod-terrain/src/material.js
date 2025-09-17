@@ -13,7 +13,7 @@ export const material = {
     fragmentShader: atmosphereFrag,
     side: THREE.BackSide,
     //transparent: true,
-    ///depthWrite: false,
+    depthWrite: false,
   }),
   sky: new THREE.MeshBasicMaterial({
     map: texture.sky,

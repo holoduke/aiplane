@@ -150,6 +150,13 @@ export class LensFlare {
       return;
     }
 
+    this.checkOcclusion(terrain);
+    if (this.occluded) {
+      this.visibility = 0;
+      this.lensFlareGroup.visible = false;
+      return;
+    }
+
     // Calculate lens flare visibility based on sun angle to camera
     const cameraDirection = new THREE.Vector3(0, 0, -1);
     cameraDirection.applyQuaternion(this.camera.quaternion);
@@ -157,7 +164,8 @@ export class LensFlare {
     const sunDirection = this.sunPosition.clone().sub(this.camera.position).normalize();
     const sunAngle = cameraDirection.dot(sunDirection);
 
-    const targetVisibility = THREE.MathUtils.clamp((sunAngle + 0.3) / 1.3, 0.0, 1.0);
+    let targetVisibility = THREE.MathUtils.clamp((sunAngle + 0.2) / 1.2, 0.0, 1.0);
+    if (sunDirection.z < -0.05) targetVisibility = 0.0;
     const lerpFactor = 1 - Math.exp(-deltaTime * 6);
     this.visibility = THREE.MathUtils.lerp(this.visibility, targetVisibility, lerpFactor);
     this.visibility = THREE.MathUtils.clamp(this.visibility, 0.0, 1.0);
