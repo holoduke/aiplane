@@ -7,11 +7,21 @@ renderer.sortObjects = false;
 renderer.autoClear = false;
 container.appendChild(renderer.domElement);
 
-const updateSize = function () {
-  renderer.setSize(container.offsetWidth, container.offsetHeight);
+let targetPixelRatio = 2;
 
-  // For a smoother render double the pixel ratio
-  renderer.setPixelRatio(2);
+const applyRendererSize = () => {
+  renderer.setPixelRatio(targetPixelRatio);
+  renderer.setSize(container.offsetWidth, container.offsetHeight);
 };
-window.addEventListener("resize", updateSize, false);
-updateSize();
+
+window.addEventListener("resize", applyRendererSize, false);
+applyRendererSize();
+
+export function setRendererPixelRatio(value) {
+  targetPixelRatio = THREE.MathUtils.clamp(value, 0.5, 3.0);
+  applyRendererSize();
+}
+
+export function getRendererPixelRatio() {
+  return targetPixelRatio;
+}

@@ -141,6 +141,67 @@ export function createControlPanel({
     },
   });
 
+  const bloomThresholdLabel = addLabel(
+    `Bloom threshold: ${app.bloomThreshold.toFixed(2)}`
+  );
+  addSlider({
+    min: 0,
+    max: 300,
+    value: Math.round(app.bloomThreshold * 100),
+    onInput: (value) => {
+      app.bloomThreshold = value / 100;
+      bloomThresholdLabel.textContent = `Bloom threshold: ${app.bloomThreshold.toFixed(
+        2
+      )}`;
+      app.applyBloomSettings();
+    },
+  });
+
+  const bloomKneeLabel = addLabel(
+    `Bloom knee: ${app.bloomSoftKnee.toFixed(2)}`
+  );
+  addSlider({
+    min: 0,
+    max: 100,
+    value: Math.round(app.bloomSoftKnee * 100),
+    onInput: (value) => {
+      app.bloomSoftKnee = value / 100;
+      bloomKneeLabel.textContent = `Bloom knee: ${app.bloomSoftKnee.toFixed(2)}`;
+      app.applyBloomSettings();
+    },
+  });
+
+  const bloomBlurLabel = addLabel(
+    `Bloom blur sigma: ${app.bloomSigma.toFixed(2)}`
+  );
+  addSlider({
+    min: 10,
+    max: 120,
+    value: Math.round(app.bloomSigma * 10),
+    step: 5,
+    onInput: (value) => {
+      app.bloomSigma = value / 10;
+      bloomBlurLabel.textContent = `Bloom blur sigma: ${app.bloomSigma.toFixed(
+        2
+      )}`;
+      app.applyBloomSettings();
+    },
+  });
+
+  const bloomResolutionLabel = addLabel(
+    `Bloom resolution: ${app.bloomResolution}px`
+  );
+  addSlider({
+    min: 32,
+    max: 512,
+    value: app.bloomResolution,
+    step: 16,
+    onInput: (value) => {
+      app.setBloomResolution(value);
+      bloomResolutionLabel.textContent = `Bloom resolution: ${app.bloomResolution}px`;
+    },
+  });
+
   const ambientLabel = addLabel(
     `Ambient strength: ${Math.round(app.ambientStrength * 100)}%`
   );
@@ -192,6 +253,22 @@ export function createControlPanel({
         app.brightnessContrastPass.material.uniforms.brightness.value =
           app.brightnessAdjustment;
       }
+    },
+  });
+
+  const renderScaleLabel = addLabel(
+    `Render scale: ${Math.round(app.renderPixelRatio * 100)}%`
+  );
+  addSlider({
+    min: 50,
+    max: 200,
+    value: Math.round(app.renderPixelRatio * 100),
+    onInput: (value) => {
+      const ratio = value / 100;
+      app.setRenderPixelRatio(ratio);
+      renderScaleLabel.textContent = `Render scale: ${Math.round(
+        app.renderPixelRatio * 100
+      )}%`;
     },
   });
 

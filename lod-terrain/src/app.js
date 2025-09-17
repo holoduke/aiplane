@@ -11,7 +11,11 @@ import {
   setNoiseHeightGain,
   DEFAULT_NOISE_SMOOTHING,
 } from "./noise.js";
-import { renderer } from "./renderer.js";
+import {
+  renderer,
+  setRendererPixelRatio,
+  getRendererPixelRatio,
+} from "./renderer.js";
 import { scene } from "./scene.js";
 import { Terrain } from "./terrain.js";
 import { LensFlare } from "./LensFlare.js";
@@ -58,12 +62,16 @@ class TerrainApp {
     this.fadeEndScale = 1.0;
     this.morphRegion = 0.9;
     this.bloomEnabled = true;
-    this.bloomStrength = 0.0;
+    this.bloomStrength = 0.7;
+    this.bloomThreshold = 1.0;
+    this.bloomSoftKnee = 0.76;
+    this.bloomSigma = 4;
+    this.bloomResolution = 256;
     this.sunTime = 15.3;
     this.sunStrengthBase = 0.4;
     this.sunDirection = new THREE.Vector3(0, 1, 0);
     this.currentSunIntensity = 1.0;
-    this.ambientStrength = 0.9;
+    this.ambientStrength = 1.19;
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
     this.ambientDirection = new THREE.Vector3(1, 0, 0);
     this.normalSmoothFactor = 0.4;
@@ -77,8 +85,13 @@ class TerrainApp {
     this.introOverlay = null;
     this.introController = null;
     this.composer = null;
-    this.bloomPass = null;
+    this.brightPass = null;
+    this.blurPassH = null;
+    this.blurPassV = null;
+    this.compositePass = null;
     this.brightnessContrastPass = null;
+    this.updateBloomResolutionFn = null;
+    this.renderPixelRatio = getRendererPixelRatio();
     this.handleComposerResize = null;
     this.lensFlare = null;
     this.sunWorldPosition = new THREE.Vector3();
@@ -98,6 +111,8 @@ class TerrainApp {
     this.updateSun = this.updateSun.bind(this);
     this.animate = this.animate.bind(this);
     this.startExperience = this.startExperience.bind(this);
+    this.setBloomResolution = this.setBloomResolution.bind(this);
+    this.setRenderPixelRatio = this.setRenderPixelRatio.bind(this);
   }
 
   init() {
@@ -182,19 +197,51 @@ class TerrainApp {
   }
 
   setupPostProcessing() {
-    const { composer, bloomPass, brightnessContrastPass, handleResize } =
-      createPostProcessing({
-        renderer,
-        scene,
-        camera,
-        bloomStrength: this.bloomStrength,
-        brightness: this.brightnessAdjustment,
-        contrast: this.contrastAdjustment,
-      });
+    const {
+      composer,
+      brightPass,
+      blurPassH,
+      blurPassV,
+      compositePass,
+      brightnessContrastPass,
+      setBloomResolution,
+      handleResize,
+    } = createPostProcessing({
+      renderer,
+      scene,
+      camera,
+      bloomStrength: this.bloomStrength,
+      bloomThreshold: this.bloomThreshold,
+      bloomSoftKnee: this.bloomSoftKnee,
+      bloomSigma: this.bloomSigma,
+      bloomResolution: this.bloomResolution,
+      brightness: this.brightnessAdjustment,
+      contrast: this.contrastAdjustment,
+    });
 
     this.composer = composer;
-    this.bloomPass = bloomPass;
+    this.brightPass = brightPass;
+    this.blurPassH = blurPassH;
+    this.blurPassV = blurPassV;
+    this.compositePass = compositePass;
     this.brightnessContrastPass = brightnessContrastPass;
+    this.updateBloomResolutionFn = setBloomResolution;
+
+    if (this.brightPass) {
+      this.brightPass.material.uniforms.uThreshold.value = this.bloomThreshold;
+      this.brightPass.material.uniforms.uSoftKnee.value = this.bloomSoftKnee;
+    }
+    if (this.blurPassH) {
+      this.blurPassH.material.uniforms.uSigma.value = this.bloomSigma;
+    }
+    if (this.blurPassV) {
+      this.blurPassV.material.uniforms.uSigma.value = this.bloomSigma;
+    }
+    if (this.compositePass) {
+      this.compositePass.material.uniforms.uBloomStrength.value =
+        this.bloomStrength;
+    }
+    this.setBloomResolution(this.bloomResolution);
 
     this.handleComposerResize = () => {
       if (!this.composer) return;
@@ -203,6 +250,34 @@ class TerrainApp {
 
     window.addEventListener("resize", this.handleComposerResize);
     this.handleComposerResize();
+
+    this.applyBloomSettings();
+  }
+
+  applyBloomSettings() {
+    if (this.brightPass) {
+      this.brightPass.material.uniforms.uThreshold.value = this.bloomThreshold;
+      this.brightPass.material.uniforms.uSoftKnee.value = this.bloomSoftKnee;
+    }
+    if (this.blurPassH) {
+      this.blurPassH.setSigma(this.bloomSigma);
+    }
+    if (this.blurPassV) {
+      this.blurPassV.setSigma(this.bloomSigma);
+    }
+  }
+
+  setBloomResolution(pixels) {
+    const clamped = THREE.MathUtils.clamp(pixels, 32, 1024);
+    this.bloomResolution = clamped;
+    this.updateBloomResolutionFn?.(clamped);
+  }
+
+  setRenderPixelRatio(value) {
+    const clamped = THREE.MathUtils.clamp(value, 0.5, 3.0);
+    this.renderPixelRatio = clamped;
+    setRendererPixelRatio(clamped);
+    this.handleComposerResize?.();
   }
 
   setupLensFlare() {
@@ -374,6 +449,15 @@ class TerrainApp {
     pointerLockElement.addEventListener("mouseleave", stopDragging);
 
     document.addEventListener("keydown", (e) => {
+      if (
+        this.introActive &&
+        (e.code === "Enter" || e.code === "NumpadEnter")
+      ) {
+        this.startExperience();
+        e.preventDefault();
+        return;
+      }
+
       this.keys[e.code] = true;
 
       if (e.code === "KeyT") {
@@ -696,12 +780,22 @@ class TerrainApp {
     }\nSun: ${this.sunTime.toFixed(1)}h`;
 
     if (this.composer) {
-      if (this.bloomPass) {
-        const shouldBloom = this.bloomEnabled && this.bloomStrength > 0.001;
-        this.bloomPass.enabled = shouldBloom;
-        if (shouldBloom) {
-          this.bloomPass.strength = this.bloomStrength;
-        }
+      const shouldBloom = this.bloomEnabled && this.bloomStrength > 0.001;
+
+      if (this.compositePass) {
+        this.compositePass.material.uniforms.uBloomStrength.value = shouldBloom
+          ? this.bloomStrength
+          : 0.0;
+      }
+
+      if (this.brightPass) {
+        this.brightPass.enabled = shouldBloom;
+      }
+      if (this.blurPassH) {
+        this.blurPassH.enabled = shouldBloom;
+      }
+      if (this.blurPassV) {
+        this.blurPassV.enabled = shouldBloom;
       }
       this.composer.render();
     } else {

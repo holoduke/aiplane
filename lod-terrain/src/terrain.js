@@ -6,6 +6,7 @@ import terrainFrag from "../js/shaders/terrain.frag?raw";
 import terrainSnowFrag from "../js/shaders/terrainSnow.frag?raw";
 import terrainToonFrag from "../js/shaders/terrainToon.frag?raw";
 import terrainRealisticFrag from "../js/shaders/terrainRealistic.frag?raw";
+import terrainLavaFrag from "../js/shaders/terrainLava.frag?raw";
 import colorScaleGlsl from "../js/shaders/colorScale.glsl?raw";
 import edgemorphGlsl from "../js/shaders/edgemorph.glsl?raw";
 
@@ -39,6 +40,7 @@ const SHADER_PROGRAMS = [
   { name: "Snowy", source: processShader(terrainSnowFrag) },
   { name: "Toon", source: processShader(terrainToonFrag) },
   { name: "Realistic", source: processShader(terrainRealisticFrag) },
+  { name: "Volcanic", source: processShader(terrainLavaFrag) },
 ];
 
 // --- Main Terrain Class ---
@@ -51,7 +53,7 @@ export class Terrain extends THREE.Object3D {
     this.resolution = resolution;
     this.heightData = heightData;
     this.offset = new THREE.Vector3(0, 0, 0);
-    this.activeShaderIndex = 3; // Start with "Realistic"
+    this.activeShaderIndex = 0; // Start with first shader
     this.fade = { start: 0, end: 0 };
     this.morphRegion = 0.3;
     this.sunDirection = new THREE.Vector3(0, 1, 0);

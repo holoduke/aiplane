@@ -41,20 +41,35 @@ export const SKY_PRESETS = {
     { time: 20.5, horizon: 0x120a21, sky: 0x070414, intensity: 0.12 },
     { time: 24.0, horizon: 0x04040a, sky: 0x030207, intensity: 0.04 },
   ],
+  vulcanic: [
+    { time: 0, horizon: 0x200303, sky: 0x080101, intensity: 0.05 },
+    { time: 5.5, horizon: 0x3f0704, sky: 0x110202, intensity: 0.12 },
+    { time: 7.0, horizon: 0x7c1407, sky: 0x2a0402, intensity: 0.25 },
+    { time: 12.0, horizon: 0x7c1407, sky: 0x3f0804, intensity: 0.4 },
+    { time: 17.5, horizon: 0x7c1407, sky: 0x2a0402, intensity: 0.22 },
+    { time: 19.5, horizon: 0x410705, sky: 0x130303, intensity: 0.1 },
+    { time: 24.0, horizon: 0x200303, sky: 0x080101, intensity: 0.05 },
+  ],
 };
 
-export const SHADER_SEQUENCE = ["Terrain", "Snowy", "Toon", "Realistic"];
+export const SHADER_SEQUENCE = [
+  "Terrain",
+  "Snowy",
+  "Toon",
+  "Realistic",
+  "Volcanic",
+];
 
 export const ENVIRONMENTS = {
   Terrain: {
     name: "Terrain",
     skyMode: "atmosphere",
-    fogColor: 0x5c4d9a,
+    fogColor: 0xbfdcff,
     fogNearScale: 0.9,
     fogFarScale: 1.0,
     horizon: 0xe4f2ff,
     skyColor: 0xbfdcff,
-    skyKeyframes: SKY_PRESETS.twilight,
+    skyKeyframes: SKY_PRESETS.daylight,
   },
   Snowy: {
     name: "Snowy",
@@ -82,7 +97,17 @@ export const ENVIRONMENTS = {
     fogColor: 0x88c6ff,
     fogNearAbsolute: 220,
     fogFarAbsolute: 520,
-    skyKeyframes: SKY_PRESETS.daylight,
+    skyKeyframes: SKY_PRESETS.alpine,
+  },
+  Volcanic: {
+    name: "Volcanic",
+    skyMode: "atmosphere",
+    horizon: 0x431313,
+    skyColor: 0x1c0c0c,
+    fogColor: 0x341111,
+    fogNearScale: 0.8,
+    fogFarScale: 0.92,
+    skyKeyframes: SKY_PRESETS.vulcanic,
   },
 };
 
@@ -96,8 +121,6 @@ export function getEnvironment(index) {
 
 export function applyEnvironment(app, index, { scene, material }) {
   const { shaderName, config } = getEnvironment(index);
-
-  console.log(`🌄 Applying environment:`, config);
 
   if (!scene.fog) {
     scene.fog = app.sceneFog || new THREE.Fog(0x000000, 300, 1000);

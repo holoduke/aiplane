@@ -9,8 +9,8 @@ export function createIntroOverlay({ container, onStart }) {
   overlay.style.flexDirection = "column";
   overlay.style.alignItems = "center";
   overlay.style.justifyContent = "center";
-  overlay.style.background = "rgba(2, 6, 12, 0.2)";
-  overlay.style.zIndex = "1000";
+  overlay.style.background = "rgba(2, 6, 12, 0.82)";
+  overlay.style.zIndex = "-1";
   overlay.style.textAlign = "center";
   overlay.style.transition = "opacity 0.35s ease";
 
@@ -25,7 +25,7 @@ export function createIntroOverlay({ container, onStart }) {
   overlay.appendChild(title);
 
   const message = document.createElement("div");
-  message.textContent = "Click to begin your sortie";
+  message.textContent = "Press Enter or click to begin your sortie";
   message.style.fontSize = "18px";
   message.style.color = "#a8c6ff";
   message.style.marginBottom = "36px";
