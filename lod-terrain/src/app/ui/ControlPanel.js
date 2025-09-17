@@ -121,6 +121,8 @@ export function createControlPanel({
     bloomToggle.textContent = `Bloom: ${app.bloomEnabled ? "On" : "Off"}`;
   });
 
+  let aaToggle;
+
   const postFxToggle = addLabel(
     `Post FX: ${app.postProcessingEnabled ? "On" : "Off"}`
   );
@@ -128,6 +130,63 @@ export function createControlPanel({
   postFxToggle.addEventListener("click", () => {
     app.setPostProcessingEnabled(!app.postProcessingEnabled);
     postFxToggle.textContent = `Post FX: ${app.postProcessingEnabled ? "On" : "Off"}`;
+    if (aaToggle) {
+      aaToggle.textContent = `Antialias: ${
+        app.aaEnabled && app.postProcessingEnabled ? "On" : "Off"
+      }`;
+    }
+  });
+
+  aaToggle = addLabel(
+    `Antialias: ${app.aaEnabled && app.postProcessingEnabled ? "On" : "Off"}`
+  );
+  aaToggle.style.cursor = "pointer";
+  aaToggle.addEventListener("click", () => {
+    app.setAntialiasEnabled(!app.aaEnabled);
+    aaToggle.textContent = `Antialias: ${
+      app.aaEnabled && app.postProcessingEnabled ? "On" : "Off"
+    }`;
+  });
+
+  const aaSubpixelLabel = addLabel(
+    `AA blend: ${Math.round(app.aaSubpixelBlending * 100)}%`
+  );
+  addSlider({
+    min: 0,
+    max: 150,
+    value: Math.round(app.aaSubpixelBlending * 100),
+    onInput: (value) => {
+      app.setAntialiasSubpixel(value / 100);
+      aaSubpixelLabel.textContent = `AA blend: ${value}%`;
+    },
+  });
+
+  const aaContrastLabel = addLabel(
+    `AA contrast: ${Math.round(app.aaContrastThreshold * 1000) / 1000}`
+  );
+  addSlider({
+    min: 1,
+    max: 200,
+    value: Math.round(app.aaContrastThreshold * 1000),
+    onInput: (value) => {
+      const threshold = value / 1000;
+      app.setAntialiasContrast(threshold);
+      aaContrastLabel.textContent = `AA contrast: ${Math.round(threshold * 1000) / 1000}`;
+    },
+  });
+
+  const aaRelativeLabel = addLabel(
+    `AA relative: ${Math.round(app.aaRelativeThreshold * 1000) / 1000}`
+  );
+  addSlider({
+    min: 1,
+    max: 300,
+    value: Math.round(app.aaRelativeThreshold * 1000),
+    onInput: (value) => {
+      const threshold = value / 1000;
+      app.setAntialiasRelative(threshold);
+      aaRelativeLabel.textContent = `AA relative: ${Math.round(threshold * 1000) / 1000}`;
+    },
   });
 
   const bloomLabel = addLabel(

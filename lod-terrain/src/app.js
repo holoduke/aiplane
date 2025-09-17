@@ -63,11 +63,15 @@ class TerrainApp {
     this.fadeEndScale = 1.0;
     this.morphRegion = 0.9;
     this.bloomEnabled = true;
-    this.bloomStrength = 0.07;
+    this.bloomStrength = 0.05;
     this.bloomThreshold = 1.0;
     this.bloomSoftKnee = 0.76;
     this.bloomSigma = 4;
-    this.bloomResolution = 256;
+    this.bloomResolution = 356;
+    this.aaEnabled = true;
+    this.aaSubpixelBlending = 1.0;
+    this.aaContrastThreshold = 0.0312;
+    this.aaRelativeThreshold = 0.063;
     this.sunTime = 15.3;
     this.sunStrengthBase = 0.4;
     this.sunDirection = new THREE.Vector3(0, 1, 0);
@@ -90,8 +94,10 @@ class TerrainApp {
     this.blurPassH = null;
     this.blurPassV = null;
     this.compositePass = null;
+    this.fxaaPass = null;
     this.brightnessContrastPass = null;
     this.updateBloomResolutionFn = null;
+    this.applyAASettingsFn = null;
     this.renderPixelRatio = getRendererPixelRatio();
     this.environmentToggle = null;
     this.postProcessingEnabled = true;
@@ -117,6 +123,10 @@ class TerrainApp {
     this.setBloomResolution = this.setBloomResolution.bind(this);
     this.setRenderPixelRatio = this.setRenderPixelRatio.bind(this);
     this.setPostProcessingEnabled = this.setPostProcessingEnabled.bind(this);
+    this.setAntialiasEnabled = this.setAntialiasEnabled.bind(this);
+    this.setAntialiasSubpixel = this.setAntialiasSubpixel.bind(this);
+    this.setAntialiasContrast = this.setAntialiasContrast.bind(this);
+    this.setAntialiasRelative = this.setAntialiasRelative.bind(this);
   }
 
   init() {
@@ -173,6 +183,10 @@ class TerrainApp {
   }
 
   createTerrain() {
+    const previousShaderIndex = this.terrain
+      ? this.terrain.activeShaderIndex
+      : 0;
+
     if (this.terrain) {
       scene.remove(this.terrain);
       this.terrain.traverse((child) => {
@@ -188,6 +202,8 @@ class TerrainApp {
       this.terrainResolution
     );
     scene.add(this.terrain);
+
+    this.terrain.setShader(previousShaderIndex);
 
     this.terrain.updateMorphRegion(this.morphRegion);
     this.terrain.updateSun(this.sunDirection, this.currentSunIntensity);
@@ -208,8 +224,10 @@ class TerrainApp {
       blurPassH,
       blurPassV,
       compositePass,
+      fxaaPass,
       brightnessContrastPass,
       setBloomResolution,
+      applyAntialiasSettings,
       handleResize,
     } = createPostProcessing({
       renderer,
@@ -220,6 +238,10 @@ class TerrainApp {
       bloomSoftKnee: this.bloomSoftKnee,
       bloomSigma: this.bloomSigma,
       bloomResolution: this.bloomResolution,
+      aaEnabled: this.aaEnabled,
+      aaSubpixelBlending: this.aaSubpixelBlending,
+      aaContrastThreshold: this.aaContrastThreshold,
+      aaRelativeThreshold: this.aaRelativeThreshold,
       brightness: this.brightnessAdjustment,
       contrast: this.contrastAdjustment,
     });
@@ -229,8 +251,10 @@ class TerrainApp {
     this.blurPassH = blurPassH;
     this.blurPassV = blurPassV;
     this.compositePass = compositePass;
+    this.fxaaPass = fxaaPass;
     this.brightnessContrastPass = brightnessContrastPass;
     this.updateBloomResolutionFn = setBloomResolution;
+    this.applyAASettingsFn = applyAntialiasSettings;
 
     if (this.brightPass) {
       this.brightPass.material.uniforms.uThreshold.value = this.bloomThreshold;
@@ -257,6 +281,7 @@ class TerrainApp {
     this.handleComposerResize();
 
     this.applyBloomSettings();
+    this.applyAntialiasSettings();
   }
 
   applyBloomSettings() {
@@ -287,6 +312,36 @@ class TerrainApp {
 
   setPostProcessingEnabled(value) {
     this.postProcessingEnabled = Boolean(value);
+    this.applyAntialiasSettings();
+  }
+
+  setAntialiasEnabled(value) {
+    this.aaEnabled = Boolean(value);
+    this.applyAntialiasSettings();
+  }
+
+  setAntialiasSubpixel(value) {
+    this.aaSubpixelBlending = THREE.MathUtils.clamp(value, 0.0, 1.5);
+    this.applyAntialiasSettings();
+  }
+
+  setAntialiasContrast(value) {
+    this.aaContrastThreshold = THREE.MathUtils.clamp(value, 0.001, 0.2);
+    this.applyAntialiasSettings();
+  }
+
+  setAntialiasRelative(value) {
+    this.aaRelativeThreshold = THREE.MathUtils.clamp(value, 0.001, 0.3);
+    this.applyAntialiasSettings();
+  }
+
+  applyAntialiasSettings() {
+    this.applyAASettingsFn?.({
+      enabled: this.aaEnabled && this.postProcessingEnabled,
+      subpixel: this.aaSubpixelBlending,
+      contrastThreshold: this.aaContrastThreshold,
+      relativeThreshold: this.aaRelativeThreshold,
+    });
   }
 
   setupLensFlare() {

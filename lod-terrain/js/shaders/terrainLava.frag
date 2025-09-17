@@ -51,7 +51,7 @@ void main() {
   vec3 rockColor = texture2D(uRock, texScale * vPosition.xy).rgb;
   rockColor = mix(rockColor, vec3(0.3, 0.25, 0.22), 0.35);
 
-  float lavaLevel = 11.5;
+  float lavaLevel = 6.5;
   float depthMask = smoothstep(lavaLevel + 2.0, lavaLevel - 14.0, height);
   float slope = 1.0 - clamp(dot(normal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0);
   float slopeMask = pow(slope, 1.05);
@@ -60,6 +60,7 @@ void main() {
   lavaNoise += 0.5 * hash21(vPosition.yx * 0.22 + 17.0);
   lavaNoise += sin(vPosition.x * 0.08) * 0.25 + cos(vPosition.y * 0.12) * 0.25;
   lavaNoise = clamp(0.5 + 0.5 * lavaNoise, 0.0, 1.0);
+  lavaNoise = clamp(lavaNoise, 0.0, 1.0);
 
   float lavaMask = clamp(mix(depthMask, depthMask * slopeMask, 0.25) + 0.22 * slopeMask, 0.0, 1.0);
 

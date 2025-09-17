@@ -7,6 +7,7 @@ import terrainSnowFrag from "../js/shaders/terrainSnow.frag?raw";
 import terrainToonFrag from "../js/shaders/terrainToon.frag?raw";
 import terrainRealisticFrag from "../js/shaders/terrainRealistic.frag?raw";
 import terrainLavaFrag from "../js/shaders/terrainLava.frag?raw";
+import terrainCrystalFrag from "../js/shaders/terrainCrystal.frag?raw";
 import colorScaleGlsl from "../js/shaders/colorScale.glsl?raw";
 import edgemorphGlsl from "../js/shaders/edgemorph.glsl?raw";
 
@@ -36,11 +37,12 @@ function processShader(shaderSource) {
 // Pre-process shaders on load for efficiency
 const PROCESSED_VERT_SHADER = processShader(terrainVert);
 const SHADER_PROGRAMS = [
+  { name: "Volcanic", source: processShader(terrainLavaFrag) },
   { name: "Terrain", source: processShader(terrainFrag) },
   { name: "Snowy", source: processShader(terrainSnowFrag) },
   { name: "Toon", source: processShader(terrainToonFrag) },
   { name: "Realistic", source: processShader(terrainRealisticFrag) },
-  { name: "Volcanic", source: processShader(terrainLavaFrag) },
+  { name: "Crystal", source: processShader(terrainCrystalFrag) },
 ];
 
 // --- Main Terrain Class ---
@@ -156,6 +158,22 @@ export class Terrain extends THREE.Object3D {
     plane.matrixAutoUpdate = false;
     plane.updateMatrix();
     this.add(plane);
+  }
+
+  setShader(index = 0) {
+    const shaderCount = SHADER_PROGRAMS.length;
+    const normalizedIndex = ((index % shaderCount) + shaderCount) % shaderCount;
+    this.activeShaderIndex = normalizedIndex;
+    const shader = SHADER_PROGRAMS[this.activeShaderIndex];
+
+    this.children.forEach((tile) => {
+      if (tile.material instanceof THREE.ShaderMaterial) {
+        tile.material.fragmentShader = shader.source;
+        tile.material.needsUpdate = true;
+      }
+    });
+
+    return this.activeShaderIndex;
   }
 
   updateFog(fog) {
@@ -280,17 +298,7 @@ export class Terrain extends THREE.Object3D {
   }
 
   cycleShader() {
-    this.activeShaderIndex =
-      (this.activeShaderIndex + 1) % SHADER_PROGRAMS.length;
-    const newShader = SHADER_PROGRAMS[this.activeShaderIndex];
-
-    this.children.forEach((tile) => {
-      if (tile.material instanceof THREE.ShaderMaterial) {
-        tile.material.fragmentShader = newShader.source;
-        tile.material.needsUpdate = true;
-      }
-    });
-
-    return this.activeShaderIndex;
+    const nextIndex = (this.activeShaderIndex + 1) % SHADER_PROGRAMS.length;
+    return this.setShader(nextIndex);
   }
 }

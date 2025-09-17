@@ -41,6 +41,15 @@ export const SKY_PRESETS = {
     { time: 20.5, horizon: 0x120a21, sky: 0x070414, intensity: 0.12 },
     { time: 24.0, horizon: 0x04040a, sky: 0x030207, intensity: 0.04 },
   ],
+  crystal: [
+    { time: 0, horizon: 0x0a1422, sky: 0x03060d, intensity: 0.08 },
+    { time: 5.5, horizon: 0x1f3a6f, sky: 0x091228, intensity: 0.2 },
+    { time: 7.0, horizon: 0x3fb6ff, sky: 0x1747a4, intensity: 0.55 },
+    { time: 12.0, horizon: 0xbaf3ff, sky: 0x74c2ff, intensity: 1.05 },
+    { time: 18.0, horizon: 0x7dd0ff, sky: 0x2f65c8, intensity: 0.85 },
+    { time: 20.0, horizon: 0x3c49a8, sky: 0x111a44, intensity: 0.35 },
+    { time: 24.0, horizon: 0x0a1422, sky: 0x03060d, intensity: 0.08 },
+  ],
   vulcanic: [
     { time: 0, horizon: 0x200303, sky: 0x080101, intensity: 0.05 },
     { time: 5.5, horizon: 0x3f0704, sky: 0x110202, intensity: 0.12 },
@@ -53,11 +62,12 @@ export const SKY_PRESETS = {
 };
 
 export const SHADER_SEQUENCE = [
+  "Volcanic",
   "Terrain",
   "Snowy",
   "Toon",
   "Realistic",
-  "Volcanic",
+  "Crystal",
 ];
 
 export const ENVIRONMENTS = {
@@ -108,6 +118,16 @@ export const ENVIRONMENTS = {
     fogNearScale: 0.8,
     fogFarScale: 0.92,
     skyKeyframes: SKY_PRESETS.vulcanic,
+  },
+  Crystal: {
+    name: "Crystal",
+    skyMode: "atmosphere",
+    horizon: 0x9bd9ff,
+    skyColor: 0x5fa8ff,
+    fogColor: 0x93c2ff,
+    fogNearScale: 0.7,
+    fogFarScale: 0.96,
+    skyKeyframes: SKY_PRESETS.crystal,
   },
 };
 

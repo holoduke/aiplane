@@ -8,6 +8,7 @@ import fullscreenVert from "../../js/shaders/fullscreenQuad.vert?raw";
 import brightPassFrag from "../../js/shaders/brightPass.frag?raw";
 import separableBlurFrag from "../../js/shaders/separableBlur.frag?raw";
 import additiveCompositeFrag from "../../js/shaders/additiveComposite.frag?raw";
+import { AdjustableFXAAShader } from "../../js/shaders/AdjustableFXAA.js";
 
 const BrightPassShader = {
   uniforms: {
@@ -167,6 +168,10 @@ export function createPostProcessing({
   bloomSoftKnee = 0.5,
   bloomSigma = 4.5,
   bloomResolution = 64,
+  aaEnabled = true,
+  aaSubpixelBlending = 1.0,
+  aaContrastThreshold = 0.0312,
+  aaRelativeThreshold = 0.063,
   brightness,
   contrast,
 }) {
@@ -223,6 +228,13 @@ export function createPostProcessing({
   compositePass.material.uniforms.uBloomStrength.value = bloomStrength;
   composer.addPass(compositePass);
 
+  const fxaaPass = new ShaderPass(AdjustableFXAAShader);
+  fxaaPass.material.uniforms.uSubpixelBlending.value = aaSubpixelBlending;
+  fxaaPass.material.uniforms.uContrastThreshold.value = aaContrastThreshold;
+  fxaaPass.material.uniforms.uRelativeThreshold.value = aaRelativeThreshold;
+  fxaaPass.enabled = aaEnabled;
+  composer.addPass(fxaaPass);
+
   const brightnessContrastPass = new ShaderPass(BrightnessContrastShader);
   brightnessContrastPass.material.uniforms.brightness.value = brightness;
   brightnessContrastPass.material.uniforms.contrast.value = contrast;
@@ -237,6 +249,12 @@ export function createPostProcessing({
     currentHeight = height;
     composer.setPixelRatio(renderer.getPixelRatio());
     composer.setSize(width, height);
+
+    const pixelRatio = renderer.getPixelRatio();
+    fxaaPass.material.uniforms.resolution.value.set(
+      1 / (width * pixelRatio),
+      1 / (height * pixelRatio)
+    );
   };
 
   handleResize(size.x, size.y);
@@ -249,6 +267,26 @@ export function createPostProcessing({
     composer.setSize(currentWidth, currentHeight);
   };
 
+  const applyAntialiasSettings = ({
+    enabled,
+    subpixel,
+    contrastThreshold,
+    relativeThreshold,
+  }) => {
+    if (enabled != null) {
+      fxaaPass.enabled = enabled;
+    }
+    if (subpixel != null) {
+      fxaaPass.material.uniforms.uSubpixelBlending.value = subpixel;
+    }
+    if (contrastThreshold != null) {
+      fxaaPass.material.uniforms.uContrastThreshold.value = contrastThreshold;
+    }
+    if (relativeThreshold != null) {
+      fxaaPass.material.uniforms.uRelativeThreshold.value = relativeThreshold;
+    }
+  };
+
   return {
     composer,
     renderPass,
@@ -256,10 +294,12 @@ export function createPostProcessing({
     blurPassH,
     blurPassV,
     compositePass,
+    fxaaPass,
     brightnessContrastPass,
     bloomTargetA,
     bloomTargetB,
     handleResize,
     setBloomResolution,
+    applyAntialiasSettings,
   };
 }
