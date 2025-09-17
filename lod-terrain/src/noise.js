@@ -1,11 +1,11 @@
 import * as THREE from "three";
 import { ImprovedNoise } from "./ImprovedNoise.js";
 
-const DEFAULT_WIDTH = 512;
+const DEFAULT_WIDTH = 256;
 const MIN_WIDTH = 64;
 const MAX_WIDTH = 1024;
 const DEFAULT_SMOOTH_STRENGTH = 0.25;
-const MAX_SMOOTH_PASSES = 12;
+const MAX_SMOOTH_PASSES = 120;
 
 let noiseWidth = DEFAULT_WIDTH;
 let size = noiseWidth * noiseWidth;

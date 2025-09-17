@@ -111,14 +111,14 @@ class TerrainApp {
     this.sunWorldPosition = new THREE.Vector3();
     this.sunDistance = 15000;
     this.terrainLevels = 7;
-    this.terrainResolution = 256;
+    this.terrainResolution = 196;
     this.terrain = null;
     this.center = null;
     this.sky = null;
     this.sky2 = null;
     this.sunMesh = null;
     this.heightSmoothStrength = DEFAULT_NOISE_SMOOTHING;
-    this.heightGain = 0.5;
+    this.heightGain = 0.74;
     this.skyKeyframes = SKY_KEYFRAMES;
 
     this.applyShaderEnvironment = this.applyShaderEnvironment.bind(this);
@@ -322,7 +322,11 @@ class TerrainApp {
   }
 
   setNoiseResolution(value) {
-    const clamped = THREE.MathUtils.clamp(value, MIN_NOISE_WIDTH, MAX_NOISE_WIDTH);
+    const clamped = THREE.MathUtils.clamp(
+      value,
+      MIN_NOISE_WIDTH,
+      MAX_NOISE_WIDTH
+    );
     const pow2 = Math.pow(2, Math.round(Math.log2(clamped)));
     const applied = setNoiseWidth(pow2);
     this.noiseResolution = applied;
