@@ -61,6 +61,8 @@ export class Terrain extends THREE.Object3D {
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
     this.smoothFactor = 0.5;
     this.specularStrength = 1.0;
+    this.skyTintColor = new THREE.Color(0.62, 0.72, 0.88);
+    this.skyTintStrength = 0.15;
 
     this.tileGeometry = new THREE.PlaneGeometry(
       1,
@@ -136,6 +138,8 @@ export class Terrain extends THREE.Object3D {
         uSpecularStrength: { value: this.specularStrength },
         uFadeStart: { value: this.fade.start },
         uFadeEnd: { value: this.fade.end },
+        uSkyTintColor: { value: this.skyTintColor.clone() },
+        uSkyTintStrength: { value: this.skyTintStrength },
       },
       vertexShader: PROCESSED_VERT_SHADER,
       fragmentShader: SHADER_PROGRAMS[this.activeShaderIndex].source,
@@ -249,6 +253,26 @@ export class Terrain extends THREE.Object3D {
       if (!uniforms) return;
       if (uniforms.uSpecularStrength) {
         uniforms.uSpecularStrength.value = this.specularStrength;
+      }
+    });
+  }
+
+  updateSkyTint(color, strength) {
+    if (color) {
+      this.skyTintColor.copy(color);
+    }
+    if (typeof strength === "number") {
+      this.skyTintStrength = Math.max(strength, 0.0);
+    }
+
+    this.children.forEach((tile) => {
+      const uniforms = tile.material.uniforms;
+      if (!uniforms) return;
+      if (uniforms.uSkyTintColor) {
+        uniforms.uSkyTintColor.value.copy(this.skyTintColor);
+      }
+      if (uniforms.uSkyTintStrength) {
+        uniforms.uSkyTintStrength.value = this.skyTintStrength;
       }
     });
   }

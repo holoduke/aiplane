@@ -13,6 +13,8 @@ uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
 uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
+uniform vec3 uSkyTintColor;
+uniform float uSkyTintStrength;
 
 varying float vMorphFactor;
 varying vec3 vNormal;
@@ -81,6 +83,10 @@ void main() {
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
   color += uAmbientColor * ambientTerm;
+
+  float skyFacing = clamp(normal.z, 0.0, 1.0);
+  float skyTintMix = uSkyTintStrength * pow(skyFacing, 0.65);
+  color = mix(color, uSkyTintColor, skyTintMix);
 
   // Add height fog
   float fogFactor = smoothstep( 10.0, 8.0, vPosition.z );

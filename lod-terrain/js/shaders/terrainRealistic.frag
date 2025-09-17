@@ -12,6 +12,8 @@ uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
 uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
+uniform vec3 uSkyTintColor;
+uniform float uSkyTintStrength;
 
 uniform sampler2D uGrass;
 uniform sampler2D uRock;
@@ -99,6 +101,11 @@ void main() {
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
   color += uAmbientColor * ambientTerm;
+
+  float skyFacing = clamp(normal.z, 0.0, 1.0);
+  float dryWeight = clamp(1.0 - waterContribution, 0.0, 1.0);
+  float skyTintMix = uSkyTintStrength * dryWeight * pow(skyFacing, 0.65);
+  color = mix(color, uSkyTintColor, skyTintMix);
 
   vec3 viewDir = normalize(cameraPosition - vPosition);
   vec3 halfVector = normalize(viewDir + sunDir);

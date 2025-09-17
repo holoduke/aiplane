@@ -20,6 +20,8 @@ const _tmpRight = new THREE.Vector3();
 const _tmpLookTarget = new THREE.Vector3();
 const _mouseState = { lastX: 0, lastY: 0 };
 const _hudEl = document.createElement("div");
+const _neutralSkyColor = new THREE.Color(0.92, 0.96, 1.0);
+const _skyBlendColor = new THREE.Color();
 
 const SKY_KEYFRAMES = [
   { time: 0, horizon: 0x081622, sky: 0x04070f, intensity: 0.05 },
@@ -118,6 +120,8 @@ export const app = {
   ambientDirection: new THREE.Vector3(1, 0, 0),
   normalSmoothFactor: 0.4,
   specularStrength: 1.0,
+  skyTintStrength: 0.15,
+  skyTintColor: new THREE.Color(0.62, 0.72, 0.88),
   composer: null,
   bloomPass: null,
   lensFlare: null,
@@ -158,6 +162,10 @@ export const app = {
       );
       app.terrain.updateSmoothFactor(app.normalSmoothFactor);
       app.terrain.updateSpecularStrength(app.specularStrength);
+      app.terrain.updateSkyTint(
+        app.skyTintColor || new THREE.Color(0.62, 0.72, 0.88),
+        app.skyTintStrength
+      );
     };
 
     app.terrainLevels = 12;
@@ -259,6 +267,11 @@ export const app = {
           app.ambientStrength,
           app.ambientColor || new THREE.Color(0.45, 0.42, 0.35)
         );
+        _skyBlendColor.copy(skySample.skyColor);
+        _skyBlendColor.lerp(skySample.horizonColor, 0.2);
+        _skyBlendColor.lerp(_neutralSkyColor, 0.55);
+        app.skyTintColor.copy(_skyBlendColor);
+        app.terrain.updateSkyTint(app.skyTintColor, app.skyTintStrength);
       }
 
       if (material.atmosphere.uniforms.uHorizonColor) {
@@ -456,7 +469,7 @@ export const app = {
       {
         sky: "atmosphere",
         horizon: 0xd7f0ff,
-        skyColor: 0x87c7ff,
+        skyColor: "#87c7ff",
         fogColor: 0x88c6ff,
         fogNearAbsolute: 220,
         fogFarAbsolute: 520,
@@ -469,7 +482,7 @@ export const app = {
       app.sky.visible = true;
 
       if (config.sky === "classic") {
-        app.sky2.visible = false;
+        app.sky2.visible = true;
       } else {
         app.sky2.visible = true;
         if (config.horizon)
@@ -698,6 +711,28 @@ export const app = {
       }
     });
     fogControl.appendChild(ambientSlider);
+
+    const skyTintLabel = document.createElement("div");
+    skyTintLabel.textContent = `Sky tint: ${Math.round(
+      app.skyTintStrength * 100
+    )}%`;
+    fogControl.appendChild(skyTintLabel);
+
+    const skyTintSlider = document.createElement("input");
+    skyTintSlider.type = "range";
+    skyTintSlider.min = "0";
+    skyTintSlider.max = "50";
+    skyTintSlider.value = String(Math.round(app.skyTintStrength * 100));
+    skyTintSlider.style.width = "160px";
+    skyTintSlider.addEventListener("input", (event) => {
+      const value = Number(event.target.value);
+      app.skyTintStrength = value / 100;
+      skyTintLabel.textContent = `Sky tint: ${value}%`;
+      if (app.terrain) {
+        app.terrain.updateSkyTint(app.skyTintColor, app.skyTintStrength);
+      }
+    });
+    fogControl.appendChild(skyTintSlider);
 
     const smoothLabel = document.createElement("div");
     smoothLabel.textContent = `Normal smoothing: ${Math.round(
