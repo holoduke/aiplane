@@ -7,7 +7,7 @@ renderer.sortObjects = false;
 renderer.autoClear = false;
 container.appendChild(renderer.domElement);
 
-let targetPixelRatio = 2;
+let targetPixelRatio = 1;
 
 const applyRendererSize = () => {
   renderer.setPixelRatio(targetPixelRatio);

@@ -121,6 +121,15 @@ export function createControlPanel({
     bloomToggle.textContent = `Bloom: ${app.bloomEnabled ? "On" : "Off"}`;
   });
 
+  const postFxToggle = addLabel(
+    `Post FX: ${app.postProcessingEnabled ? "On" : "Off"}`
+  );
+  postFxToggle.style.cursor = "pointer";
+  postFxToggle.addEventListener("click", () => {
+    app.setPostProcessingEnabled(!app.postProcessingEnabled);
+    postFxToggle.textContent = `Post FX: ${app.postProcessingEnabled ? "On" : "Off"}`;
+  });
+
   const bloomLabel = addLabel(
     `Bloom strength: ${Math.round(app.bloomStrength * 100)}%`
   );

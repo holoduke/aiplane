@@ -31,6 +31,7 @@ import { createPostProcessing } from "./app/postprocessing.js";
 import { createIntroOverlay } from "./app/ui/IntroOverlay.js";
 import { createControlPanel } from "./app/ui/ControlPanel.js";
 import { applyEnvironment } from "./app/environment.js";
+import { createEnvironmentToggle } from "./app/ui/EnvironmentToggle.js";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 const _tmpDirection = new THREE.Vector3();
@@ -62,7 +63,7 @@ class TerrainApp {
     this.fadeEndScale = 1.0;
     this.morphRegion = 0.9;
     this.bloomEnabled = true;
-    this.bloomStrength = 0.7;
+    this.bloomStrength = 0.07;
     this.bloomThreshold = 1.0;
     this.bloomSoftKnee = 0.76;
     this.bloomSigma = 4;
@@ -92,11 +93,13 @@ class TerrainApp {
     this.brightnessContrastPass = null;
     this.updateBloomResolutionFn = null;
     this.renderPixelRatio = getRendererPixelRatio();
+    this.environmentToggle = null;
+    this.postProcessingEnabled = true;
     this.handleComposerResize = null;
     this.lensFlare = null;
     this.sunWorldPosition = new THREE.Vector3();
     this.sunDistance = 15000;
-    this.terrainLevels = 12;
+    this.terrainLevels = 7;
     this.terrainResolution = 256;
     this.terrain = null;
     this.center = null;
@@ -113,6 +116,7 @@ class TerrainApp {
     this.startExperience = this.startExperience.bind(this);
     this.setBloomResolution = this.setBloomResolution.bind(this);
     this.setRenderPixelRatio = this.setRenderPixelRatio.bind(this);
+    this.setPostProcessingEnabled = this.setPostProcessingEnabled.bind(this);
   }
 
   init() {
@@ -137,6 +141,7 @@ class TerrainApp {
     this.center = new THREE.Vector3(205, 135, 0);
     this.lookTarget = this.center.clone();
 
+    this.setupEnvironmentToggle();
     this.setupControlPanel();
     this.setupInputHandlers();
 
@@ -280,6 +285,10 @@ class TerrainApp {
     this.handleComposerResize?.();
   }
 
+  setPostProcessingEnabled(value) {
+    this.postProcessingEnabled = Boolean(value);
+  }
+
   setupLensFlare() {
     this.lensFlare = new LensFlare(scene, camera, renderer);
   }
@@ -352,6 +361,13 @@ class TerrainApp {
       createTerrain: () => this.createTerrain(),
       setTerrainSmoothing: (value) => this.setTerrainSmoothing(value),
       setHeightGain: (value) => this.setHeightGain(value),
+    });
+  }
+
+  setupEnvironmentToggle() {
+    this.environmentToggle = createEnvironmentToggle({
+      app: this,
+      container,
     });
   }
 
@@ -578,6 +594,8 @@ class TerrainApp {
   applyShaderEnvironment(index = 0) {
     const { config } = applyEnvironment(this, index, { scene, material });
     this.updateSun();
+    const label = config?.name || this.environmentName || "Environment";
+    this.environmentToggle?.update(label);
     return config;
   }
 
@@ -779,7 +797,7 @@ class TerrainApp {
       this.fogEnabled ? "On" : "Off"
     }\nSun: ${this.sunTime.toFixed(1)}h`;
 
-    if (this.composer) {
+    if (this.composer && this.postProcessingEnabled) {
       const shouldBloom = this.bloomEnabled && this.bloomStrength > 0.001;
 
       if (this.compositePass) {
@@ -799,6 +817,9 @@ class TerrainApp {
       }
       this.composer.render();
     } else {
+      if (this.brightPass) this.brightPass.enabled = false;
+      if (this.blurPassH) this.blurPassH.enabled = false;
+      if (this.blurPassV) this.blurPassV.enabled = false;
       renderer.render(scene, camera);
     }
 
