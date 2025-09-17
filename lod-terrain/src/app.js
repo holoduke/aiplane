@@ -112,6 +112,7 @@ export const app = {
   sunStrengthBase: 0.4,
   sunDirection: new THREE.Vector3(0, 1, 0),
   currentSunIntensity: 1.0,
+  sunDistance: 15000,
   ambientStrength: 0.9,
   ambientColor: new THREE.Color(0.45, 0.42, 0.35),
   ambientDirection: new THREE.Vector3(1, 0, 0),
@@ -269,14 +270,7 @@ export const app = {
         material.atmosphere.uniforms.uSkyColor.value.copy(skySample.skyColor);
       }
 
-      const origin = app.center ? app.center.clone() : camera.position.clone();
-      const sunDistance = 5000;
-      app.sunWorldPosition
-        .copy(origin)
-        .add(app.sunDirection.clone().multiplyScalar(sunDistance));
-
       if (app.sunMesh) {
-        app.sunMesh.position.copy(app.sunWorldPosition);
         app.sunMesh.material.color.setHSL(
           0.15,
           0.3,
@@ -317,9 +311,6 @@ export const app = {
     // Atmospheric sphere overlay
     app.sky2 = new THREE.Mesh(geometry.sky2, material.atmosphere);
     app.sky2.renderOrder = 10000; // Render well before everything else
-    // app.sky.depthTest = false;
-    // app.sky.occluded = false;
-    // app.sky.frustumCulled = false;
     scene.add(app.sky2);
 
     if (!scene.fog) {
@@ -1042,6 +1033,16 @@ export const app = {
     app.terrain.offset.x = camera.position.x;
     app.terrain.offset.y = camera.position.y;
 
+    // Keep sun anchored to camera direction to prevent lens flare parallax drift
+    if (app.sunWorldPosition && app.sunDirection) {
+      app.sunWorldPosition
+        .copy(camera.position)
+        .addScaledVector(app.sunDirection, app.sunDistance);
+      if (app.sunMesh) {
+        app.sunMesh.position.copy(app.sunWorldPosition);
+      }
+    }
+
     // Keep sky geometry centered on the camera for an infinite effect
     if (app.sky) {
       app.sky.position.copy(camera.position);
@@ -1051,6 +1052,8 @@ export const app = {
       app.sky2.position.copy(camera.position);
       app.sky2.updateMatrixWorld();
     }
+
+    camera.updateMatrixWorld(true);
 
     if (app.lensFlare) {
       app.lensFlare.update(deltaTime, app.sunWorldPosition, app.terrain);
