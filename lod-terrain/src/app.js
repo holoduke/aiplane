@@ -9,7 +9,11 @@ import {
   noise,
   setNoiseSmoothing,
   setNoiseHeightGain,
+  setNoiseWidth,
+  getNoiseWidth,
   DEFAULT_NOISE_SMOOTHING,
+  MIN_NOISE_WIDTH,
+  MAX_NOISE_WIDTH,
 } from "./noise.js";
 import {
   renderer,
@@ -85,6 +89,7 @@ class TerrainApp {
     this.skyTintColor = new THREE.Color(0.62, 0.72, 0.88);
     this.contrastAdjustment = 0.1;
     this.brightnessAdjustment = -0.06;
+    this.noiseResolution = getNoiseWidth();
     this.introActive = true;
     this.introElapsed = 0;
     this.introOverlay = null;
@@ -127,6 +132,7 @@ class TerrainApp {
     this.setAntialiasSubpixel = this.setAntialiasSubpixel.bind(this);
     this.setAntialiasContrast = this.setAntialiasContrast.bind(this);
     this.setAntialiasRelative = this.setAntialiasRelative.bind(this);
+    this.setNoiseResolution = this.setNoiseResolution.bind(this);
   }
 
   init() {
@@ -313,6 +319,13 @@ class TerrainApp {
   setPostProcessingEnabled(value) {
     this.postProcessingEnabled = Boolean(value);
     this.applyAntialiasSettings();
+  }
+
+  setNoiseResolution(value) {
+    const clamped = THREE.MathUtils.clamp(value, MIN_NOISE_WIDTH, MAX_NOISE_WIDTH);
+    const pow2 = Math.pow(2, Math.round(Math.log2(clamped)));
+    const applied = setNoiseWidth(pow2);
+    this.noiseResolution = applied;
   }
 
   setAntialiasEnabled(value) {

@@ -1,26 +1,28 @@
 import * as THREE from "three";
 import { ImprovedNoise } from "./ImprovedNoise.js";
 
-const WIDTH = 1024;
-const SIZE = WIDTH * WIDTH;
+const DEFAULT_WIDTH = 512;
+const MIN_WIDTH = 64;
+const MAX_WIDTH = 1024;
 const DEFAULT_SMOOTH_STRENGTH = 0.25;
 const MAX_SMOOTH_PASSES = 12;
 
-const baseHeight = new Float32Array(SIZE);
-const workingA = new Float32Array(SIZE);
-const workingB = new Float32Array(SIZE);
-const textureData = new Uint8Array(SIZE);
+let noiseWidth = DEFAULT_WIDTH;
+let size = noiseWidth * noiseWidth;
+
+let baseHeight = new Float32Array(size);
+let workingA = new Float32Array(size);
+let workingB = new Float32Array(size);
+let textureData = new Uint8Array(size);
 
 let heightScale = 1.0;
 let currentSmoothStrength = DEFAULT_SMOOTH_STRENGTH;
 let heightGain = 1.0;
 
-generateBaseHeight();
-
 export const noise = new THREE.DataTexture(
   textureData,
-  WIDTH,
-  WIDTH,
+  noiseWidth,
+  noiseWidth,
   THREE.RedFormat,
   THREE.UnsignedByteType
 );
@@ -32,7 +34,50 @@ noise.minFilter = THREE.LinearMipMapLinearFilter;
 noise.generateMipmaps = true;
 noise.needsUpdate = true;
 
-applySmoothing(DEFAULT_SMOOTH_STRENGTH);
+initializeHeightField();
+
+export const DEFAULT_NOISE_SMOOTHING = DEFAULT_SMOOTH_STRENGTH;
+export const DEFAULT_NOISE_WIDTH = DEFAULT_WIDTH;
+export const MIN_NOISE_WIDTH = MIN_WIDTH;
+export const MAX_NOISE_WIDTH = MAX_WIDTH;
+
+export function getNoiseWidth() {
+  return noiseWidth;
+}
+
+export function setNoiseWidth(width) {
+  const clamped = clampToPowerOfTwo(
+    THREE.MathUtils.clamp(Math.round(width), MIN_WIDTH, MAX_WIDTH)
+  );
+
+  if (clamped === noiseWidth) {
+    return noiseWidth;
+  }
+
+  noiseWidth = clamped;
+  size = noiseWidth * noiseWidth;
+
+  baseHeight = new Float32Array(size);
+  workingA = new Float32Array(size);
+  workingB = new Float32Array(size);
+  textureData = new Uint8Array(size);
+
+  if (typeof noise.dispose === "function") {
+    noise.dispose();
+  }
+
+  noise.image = {
+    data: textureData,
+    width: noiseWidth,
+    height: noiseWidth,
+  };
+  noise.mipmaps = [];
+  noise.needsUpdate = true;
+
+  initializeHeightField();
+
+  return noiseWidth;
+}
 
 export function setNoiseSmoothing(strength) {
   const clamped = THREE.MathUtils.clamp(strength, 0, 1);
@@ -43,14 +88,17 @@ export function setNoiseSmoothing(strength) {
   applySmoothing(clamped);
 }
 
-export const DEFAULT_NOISE_SMOOTHING = DEFAULT_SMOOTH_STRENGTH;
-
 export function setNoiseHeightGain(gain) {
   const clamped = THREE.MathUtils.clamp(gain, 0, 4);
   if (Math.abs(clamped - heightGain) < 1e-4) {
     return;
   }
   heightGain = clamped;
+  applySmoothing(currentSmoothStrength);
+}
+
+function initializeHeightField() {
+  generateBaseHeight();
   applySmoothing(currentSmoothStrength);
 }
 
@@ -64,9 +112,9 @@ function generateBaseHeight() {
   let maxValue = 0;
 
   for (let iteration = 0; iteration < 4; iteration++) {
-    for (let i = 0; i < SIZE; i++) {
-      const x = i % WIDTH;
-      const y = Math.floor(i / WIDTH);
+    for (let i = 0; i < size; i++) {
+      const x = i % noiseWidth;
+      const y = Math.floor(i / noiseWidth);
       const value = Math.abs(perlin.noise(x / quality, y / quality, z));
       baseHeight[i] += value * quality;
       if (baseHeight[i] > maxValue) {
@@ -90,8 +138,12 @@ function applySmoothing(strength) {
     let dst = workingB;
 
     for (let p = 0; p < passes; p++) {
-      const t = passes > 1 ? p / (passes - 1) : 1;
-      const blend = THREE.MathUtils.lerp(0.15, 0.85, Math.max(clampedStrength, t));
+      const t = passes > 1 ? p / Math.max(passes - 1, 1) : 1;
+      const blend = THREE.MathUtils.lerp(
+        0.15,
+        0.85,
+        Math.max(clampedStrength, t)
+      );
       smoothPass(src, dst, blend);
       const temp = src;
       src = dst;
@@ -107,27 +159,27 @@ function applySmoothing(strength) {
 }
 
 function smoothPass(src, dst, blend) {
-  // Top and bottom edges remain untouched to preserve tiling seams
-  for (let x = 0; x < WIDTH; x++) {
+  for (let x = 0; x < noiseWidth; x++) {
     dst[x] = src[x];
-    dst[(WIDTH - 1) * WIDTH + x] = src[(WIDTH - 1) * WIDTH + x];
+    dst[(noiseWidth - 1) * noiseWidth + x] =
+      src[(noiseWidth - 1) * noiseWidth + x];
   }
 
-  for (let y = 1; y < WIDTH - 1; y++) {
-    const row = y * WIDTH;
+  for (let y = 1; y < noiseWidth - 1; y++) {
+    const row = y * noiseWidth;
     dst[row] = src[row];
-    dst[row + WIDTH - 1] = src[row + WIDTH - 1];
+    dst[row + noiseWidth - 1] = src[row + noiseWidth - 1];
 
-    for (let x = 1; x < WIDTH - 1; x++) {
+    for (let x = 1; x < noiseWidth - 1; x++) {
       const i = row + x;
       const center = src[i];
       const cross =
-        src[i - 1] + src[i + 1] + src[i - WIDTH] + src[i + WIDTH];
+        src[i - 1] + src[i + 1] + src[i - noiseWidth] + src[i + noiseWidth];
       const diagonals =
-        src[i - WIDTH - 1] +
-        src[i - WIDTH + 1] +
-        src[i + WIDTH - 1] +
-        src[i + WIDTH + 1];
+        src[i - noiseWidth - 1] +
+        src[i - noiseWidth + 1] +
+        src[i + noiseWidth - 1] +
+        src[i + noiseWidth + 1];
       const neighborAvg = (center * 4 + cross * 2 + diagonals) / 16;
       dst[i] = THREE.MathUtils.lerp(center, neighborAvg, blend);
     }
@@ -135,7 +187,7 @@ function smoothPass(src, dst, blend) {
 }
 
 function writeTextureData(source) {
-  for (let i = 0; i < SIZE; i++) {
+  for (let i = 0; i < size; i++) {
     const value = Math.max(
       0,
       Math.min(255, Math.round(source[i] * heightScale * heightGain))
@@ -143,4 +195,9 @@ function writeTextureData(source) {
     textureData[i] = value;
   }
   noise.needsUpdate = true;
+}
+
+function clampToPowerOfTwo(value) {
+  const exponent = Math.ceil(Math.log2(value));
+  return Math.pow(2, exponent);
 }

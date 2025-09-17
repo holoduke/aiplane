@@ -474,6 +474,21 @@ export function createControlPanel({
     },
   });
 
+  const noiseResolutionLabel = addLabel(
+    `Noise resolution: ${app.noiseResolution}`
+  );
+  const noiseSlider = addSlider({
+    min: 64,
+    max: 1024,
+    step: 64,
+    value: app.noiseResolution,
+    onInput: (value) => {
+      app.setNoiseResolution(value);
+      noiseResolutionLabel.textContent = `Noise resolution: ${app.noiseResolution}`;
+      noiseSlider.value = String(app.noiseResolution);
+    },
+  });
+
   container.appendChild(panel);
 
   return { panel };
