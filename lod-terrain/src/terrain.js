@@ -160,7 +160,6 @@ export class Terrain extends THREE.Object3D {
       uCascadeEnabled: { value: new THREE.Vector3(1.0, 1.0, 1.0) },
       uShadowTexelSize: { value: new THREE.Vector2(1 / 1024, 1 / 1024) },
       uShadowSoftness: { value: 1.0 },
-      uCascadeTransition: { value: 0.15 },
       uShadowMap0: { value: null },
       uShadowMap1: { value: null },
       uShadowMap2: { value: null },
@@ -295,8 +294,7 @@ export class Terrain extends THREE.Object3D {
     enabled,
     cascadeEnabled,
     shadowResolution,
-    softness,
-    transition
+    softness
   ) {
     if (cascadeEnabled) {
       this._cascadeEnabledVec.set(
@@ -341,9 +339,6 @@ export class Terrain extends THREE.Object3D {
       }
       if (uniforms.uShadowSoftness && softness !== undefined) {
         uniforms.uShadowSoftness.value = softness;
-      }
-      if (uniforms.uCascadeTransition && transition !== undefined) {
-        uniforms.uCascadeTransition.value = transition;
       }
       if (cascadeEnabled && uniforms.uCascadeEnabled) {
         uniforms.uCascadeEnabled.value.set(

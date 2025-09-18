@@ -78,7 +78,9 @@ void main() {
   vec3 normal = normalize(mix(normalize(vNormal), terrainNormal, uSmoothFactor));
   vec3 grass = vec3( 0.12, 0.87, 0.14 );
   vec3 rock = vec3( 0.31, 0.11, 0.09 );
-  vec3 color = mix( water, grass, smoothstep( 7.0, 14.0, vPosition.z ) );
+  float waterBlend = smoothstep( 7.0, 14.0, vPosition.z );
+  float waterMask = 1.0 - waterBlend;
+  vec3 color = mix( water, grass, waterBlend );
   color = mix( rock, color, grassStick );
 
   // Incident light (generate shadows and highlights)
@@ -90,6 +92,11 @@ void main() {
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
   color += uAmbientColor * ambientTerm;
 
+  if (waterMask > 0.0) {
+    float shadowDarken = mix(0.35, 1.0, shadowFactor);
+    color = mix(color * shadowDarken, color, 1.0 - clamp(waterMask, 0.0, 1.0));
+  }
+
   float skyFacing = clamp(normal.z, 0.0, 1.0);
   float skyTintMix = uSkyTintStrength * pow(skyFacing, 0.65) * shadowFactor;
   color = mix(color, uSkyTintColor, skyTintMix);
@@ -99,6 +106,10 @@ void main() {
   fogFactor = 0.93 * pow( fogFactor, 1.4 );
   //vec3 fogColor = mix( vec3( 0.86, 0.95, 1.0 ), vec3( 0.98, 0.77, 0.33), fogAngle );
   vec3 fogColor = vec3( 0.0, 0.6 + 0.4 * smoothstep( 3.0, 10.0, vPosition.z ), 0.935 );
+  float waterShadow = mix(0.25, 1.0, shadowFactor);
+  if (waterMask > 0.0) {
+    fogColor = mix(fogColor * waterShadow, fogColor, waterBlend);
+  }
   color = mix( color, fogColor, fogFactor );
 
   // Add distance fog
@@ -106,6 +117,9 @@ void main() {
   float fogRange = max(uFogFar - uFogNear, 0.0001);
   fogFactor = clamp((distToCamera - uFogNear) / fogRange, 0.0, 1.0);
   fogColor = uFogColor;
+  if (waterMask > 0.0) {
+    fogColor = mix(fogColor * waterShadow, fogColor, waterBlend);
+  }
   color = mix( color, fogColor, fogFactor );
 
   float edgeFade = 1.0;

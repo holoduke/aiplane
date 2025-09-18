@@ -100,7 +100,7 @@ class TerrainApp {
     this.shadowBias = 0.0015;
     this.shadowStrength = 1.0;
     this.shadowSoftness = 1.0;
-    this.shadowCascadeTransition = 0.2;
+    this.shadowCascadeOverlap = 0.1;
     this.shadowCascades = [];
     this.shadowMatrices = [];
     this.shadowSplitsVec = new THREE.Vector4(0, 0, 0, 0);
@@ -632,8 +632,7 @@ class TerrainApp {
       this.shadowsEnabled && this.shadowCascades.length > 0,
       this.shadowCascadeEnabled,
       this.shadowResolution,
-      this.shadowSoftness,
-      this.shadowCascadeTransition
+      this.shadowSoftness
     );
     this.terrain.updateCascadeEnabled(this.shadowCascadeEnabled);
     if (this.viewMatrix) {
@@ -659,19 +658,40 @@ class TerrainApp {
       splits.push(splitDist);
     }
 
-    this.shadowSplitsVec.set(
-      splits[0] || far,
-      splits[1] || far,
-      splits[2] || far,
-      far
-    );
+    const adjustedSplits = [];
 
     let previousSplit = near;
+    let previousRawSplit = near;
     for (let i = 0; i < cascadeCount; i++) {
       const currentSplit = splits[i];
-      this.updateCascadeCamera(i, previousSplit, currentSplit, shadowCamera);
-      previousSplit = currentSplit;
+      if (currentSplit == null) continue;
+
+      const segmentLength = Math.max(currentSplit - previousRawSplit, 0);
+      const overlapAmount = segmentLength * this.shadowCascadeOverlap;
+
+      const cascadeNear = previousSplit;
+      const cascadeFar = Math.min(far, currentSplit + overlapAmount);
+
+      if (cascadeFar > cascadeNear + 1e-3) {
+        this.updateCascadeCamera(i, cascadeNear, cascadeFar, shadowCamera);
+      }
+
+      const adjustedSplit = Math.max(
+        cascadeNear + 1e-3,
+        currentSplit - overlapAmount
+      );
+      adjustedSplits[i] = adjustedSplit;
+
+      previousSplit = adjustedSplit;
+      previousRawSplit = currentSplit;
     }
+
+    this.shadowSplitsVec.set(
+      adjustedSplits[0] ?? far,
+      adjustedSplits[1] ?? far,
+      adjustedSplits[2] ?? far,
+      far
+    );
 
     this.applyShadowUniformsToTerrain();
   }
@@ -1245,7 +1265,7 @@ class TerrainApp {
     if (this.introActive) {
       const radius = 900 + 65 * Math.sin(this.introElapsed * 0.45);
       const angle = this.introElapsed * 0.18;
-      const height = 150 + 55 * Math.sin(this.introElapsed * 0.2);
+      const height = 170 + 55 * Math.sin(this.introElapsed * 0.2);
       const lookOrbit = 120 * Math.sin(this.introElapsed * 0.6);
 
       camera.position.set(
@@ -1256,7 +1276,7 @@ class TerrainApp {
 
       _tmpLookTarget
         .copy(this.center)
-        .addScaledVector(WORLD_UP, 40 + 30 * Math.sin(this.introElapsed * 0.8));
+        .addScaledVector(WORLD_UP, 60 + 30 * Math.sin(this.introElapsed * 0.8));
       _tmpLookTarget.x += Math.cos(angle + Math.PI / 2) * lookOrbit;
       _tmpLookTarget.y += Math.sin(angle + Math.PI / 2) * lookOrbit;
       camera.up.copy(WORLD_UP);

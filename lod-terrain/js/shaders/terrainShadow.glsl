@@ -10,21 +10,6 @@ uniform vec3 uCascadeEnabled;
 uniform mat4 uViewMatrix;
 uniform vec2 uShadowTexelSize;
 uniform float uShadowSoftness;
-uniform float uCascadeTransition;
-
-float getCascadeNear(int cascadeIndex) {
-  if (cascadeIndex <= 0) return 0.0;
-  if (cascadeIndex == 1) return uCascadeSplits.x;
-  if (cascadeIndex == 2) return uCascadeSplits.y;
-  return uCascadeSplits.z;
-}
-
-float getCascadeFar(int cascadeIndex) {
-  if (cascadeIndex == 0) return uCascadeSplits.x;
-  if (cascadeIndex == 1) return uCascadeSplits.y;
-  if (cascadeIndex == 2) return uCascadeSplits.z;
-  return uCascadeSplits.w;
-}
 
 float readShadowDepth(int cascadeIndex, vec2 uv) {
   if (cascadeIndex == 0) {
@@ -103,37 +88,5 @@ float computeShadowFactor(vec3 worldPos) {
   if (cascadeIndex == 1 && uCascadeEnabled.y < 0.5) return 1.0;
   if (cascadeIndex == 2 && uCascadeEnabled.z < 0.5) return 1.0;
 
-  float shadow = sampleShadowCascade(cascadeIndex, worldPos);
-
-  float transition = clamp(uCascadeTransition, 0.0, 0.5);
-  if (transition > 0.0) {
-    float cascadeNear = getCascadeNear(cascadeIndex);
-    float cascadeFar = getCascadeFar(cascadeIndex);
-    float range = max(cascadeFar - cascadeNear, 1e-3);
-    float blendSize = range * transition;
-
-    if (blendSize > 0.0) {
-      if (cascadeIndex == 1 && uCascadeEnabled.x > 0.5) {
-        float t = clamp((viewDistance - cascadeNear) / blendSize, 0.0, 1.0);
-        float prevShadow = sampleShadowCascade(0, worldPos);
-        shadow = mix(prevShadow, shadow, t);
-      } else if (cascadeIndex == 2 && uCascadeEnabled.y > 0.5) {
-        float t = clamp((viewDistance - cascadeNear) / blendSize, 0.0, 1.0);
-        float prevShadow = sampleShadowCascade(1, worldPos);
-        shadow = mix(prevShadow, shadow, t);
-      }
-
-      if (cascadeIndex == 0 && uCascadeEnabled.y > 0.5) {
-        float t = clamp((viewDistance - (cascadeFar - blendSize)) / blendSize, 0.0, 1.0);
-        float nextShadow = sampleShadowCascade(1, worldPos);
-        shadow = mix(shadow, nextShadow, t);
-      } else if (cascadeIndex == 1 && uCascadeEnabled.z > 0.5) {
-        float t = clamp((viewDistance - (cascadeFar - blendSize)) / blendSize, 0.0, 1.0);
-        float nextShadow = sampleShadowCascade(2, worldPos);
-        shadow = mix(shadow, nextShadow, t);
-      }
-    }
-  }
-
-  return shadow;
+  return sampleShadowCascade(cascadeIndex, worldPos);
 }
