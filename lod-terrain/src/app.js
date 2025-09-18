@@ -96,10 +96,11 @@ class TerrainApp {
     this.shadowCascadeCount = 3;
     this.shadowResolution = 2048;
     this.shadowLambda = 0.6;
-    this.shadowMaxDistance = 4100;
+    this.shadowMaxDistance = 5000;
     this.shadowBias = 0.0015;
     this.shadowStrength = 1.0;
     this.shadowSoftness = 1.0;
+    this.shadowCascadeTransition = 0.2;
     this.shadowCascades = [];
     this.shadowMatrices = [];
     this.shadowSplitsVec = new THREE.Vector4(0, 0, 0, 0);
@@ -631,7 +632,8 @@ class TerrainApp {
       this.shadowsEnabled && this.shadowCascades.length > 0,
       this.shadowCascadeEnabled,
       this.shadowResolution,
-      this.shadowSoftness
+      this.shadowSoftness,
+      this.shadowCascadeTransition
     );
     this.terrain.updateCascadeEnabled(this.shadowCascadeEnabled);
     if (this.viewMatrix) {
@@ -734,28 +736,25 @@ class TerrainApp {
       .crossVectors(lightForward, lightRight)
       .normalize();
 
-    const focusWorld = _tmpFocus.copy(perspectiveCamera.position);
-    let focusX = focusWorld.dot(lightRight);
-    let focusY = focusWorld.dot(lightUp);
-    const originalFocusX = focusX;
-    const originalFocusY = focusY;
-    const focusZ = focusWorld.dot(lightForward);
+    const minBounds = { x: Infinity, y: Infinity, z: Infinity };
+    const maxBounds = { x: -Infinity, y: -Infinity, z: -Infinity };
 
-    let radiusXY = 0;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
+    const focusWorld = _tmpFocus.copy(perspectiveCamera.position);
+    const focusX = focusWorld.dot(lightRight);
+    const focusY = focusWorld.dot(lightUp);
+    const focusZ = focusWorld.dot(lightForward);
 
     const extendBounds = (point) => {
       const x = point.dot(lightRight);
       const y = point.dot(lightUp);
       const z = point.dot(lightForward);
 
-      const dx = x - focusX;
-      const dy = y - focusY;
-      radiusXY = Math.max(radiusXY, Math.hypot(dx, dy));
-
-      minZ = Math.min(minZ, z);
-      maxZ = Math.max(maxZ, z);
+      if (x < minBounds.x) minBounds.x = x;
+      if (y < minBounds.y) minBounds.y = y;
+      if (z < minBounds.z) minBounds.z = z;
+      if (x > maxBounds.x) maxBounds.x = x;
+      if (y > maxBounds.y) maxBounds.y = y;
+      if (z > maxBounds.z) maxBounds.z = z;
     };
 
     for (let i = 0; i < 8; i++) {
@@ -770,33 +769,66 @@ class TerrainApp {
     const cascadeCount = this.shadowCascades.length || 1;
     const cascadeT = cascadeCount > 1 ? index / (cascadeCount - 1) : 0;
 
-    const groundReach = THREE.MathUtils.lerp(400, this.shadowMaxDistance, cascadeT);
+    const groundReach = THREE.MathUtils.lerp(
+      400,
+      this.shadowMaxDistance,
+      cascadeT
+    );
     extendBounds(focusWorld.clone().addScaledVector(WORLD_UP, -groundReach));
     const marginXY = THREE.MathUtils.lerp(18, 60, cascadeT);
     const marginZ = THREE.MathUtils.lerp(50, 180, cascadeT);
 
-    radiusXY += marginXY;
-    minZ -= marginZ;
-    maxZ += marginZ;
+    const boundsCenterX = (minBounds.x + maxBounds.x) * 0.5;
+    const boundsCenterY = (minBounds.y + maxBounds.y) * 0.5;
 
-    const halfWidth = Math.max(radiusXY, 1e-3);
-    const halfHeight = halfWidth;
+    let centerX = THREE.MathUtils.lerp(focusX, boundsCenterX, cascadeT);
+    let centerY = THREE.MathUtils.lerp(focusY, boundsCenterY, cascadeT);
 
+    let halfExtentX = Math.max(
+      Math.abs(centerX - minBounds.x),
+      Math.abs(centerX - maxBounds.x)
+    );
+    let halfExtentY = Math.max(
+      Math.abs(centerY - minBounds.y),
+      Math.abs(centerY - maxBounds.y)
+    );
+
+    let halfWidth = Math.max(halfExtentX, halfExtentY) + marginXY;
+    halfWidth = Math.max(halfWidth, 1e-3);
+
+    const minZ = minBounds.z - marginZ;
+    const maxZ = maxBounds.z + marginZ;
     const depth = Math.max(1.0, maxZ - minZ);
     const centerZ = (minZ + maxZ) * 0.5;
     const cameraOffset = depth * 0.5;
 
     const texelSize = (halfWidth * 2) / this.shadowResolution;
     if (texelSize > 0) {
-      focusX = Math.round(focusX / texelSize) * texelSize;
-      focusY = Math.round(focusY / texelSize) * texelSize;
+      centerX = Math.round((centerX - focusX) / texelSize) * texelSize + focusX;
+      centerY = Math.round((centerY - focusY) / texelSize) * texelSize + focusY;
     }
+
+    // Ensure snapping did not shrink coverage
+    halfExtentX = Math.max(
+      Math.abs(centerX - minBounds.x),
+      Math.abs(centerX - maxBounds.x)
+    );
+    halfExtentY = Math.max(
+      Math.abs(centerY - minBounds.y),
+      Math.abs(centerY - maxBounds.y)
+    );
+    halfWidth = Math.max(
+      halfWidth,
+      halfExtentX + marginXY,
+      halfExtentY + marginXY
+    );
+    const halfHeight = halfWidth;
 
     const centerWorld = focusWorld
       .clone()
-      .add(lightRight.clone().multiplyScalar(focusX - originalFocusX))
-      .add(lightUp.clone().multiplyScalar(focusY - originalFocusY))
-      .add(lightForward.clone().multiplyScalar(centerZ - focusZ));
+      .addScaledVector(lightRight, centerX - focusX)
+      .addScaledVector(lightUp, centerY - focusY)
+      .addScaledVector(lightForward, centerZ - focusZ);
 
     const lightCamera = cascade.camera;
     const eyeWorld = centerWorld

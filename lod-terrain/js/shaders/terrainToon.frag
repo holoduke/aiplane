@@ -91,7 +91,7 @@ void main() {
   color += uAmbientColor * ambientTerm;
 
   float skyFacing = clamp(normal.z, 0.0, 1.0);
-  float skyTintMix = uSkyTintStrength * pow(skyFacing, 0.65);
+  float skyTintMix = uSkyTintStrength * pow(skyFacing, 0.65) * shadowFactor;
   color = mix(color, uSkyTintColor, skyTintMix);
 
   // Add height fog
