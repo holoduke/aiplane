@@ -11,6 +11,7 @@ import {
   setNoiseHeightGain,
   setNoiseWidth,
   getNoiseWidth,
+  sampleHeight,
   DEFAULT_NOISE_SMOOTHING,
   MIN_NOISE_WIDTH,
   MAX_NOISE_WIDTH,
@@ -24,6 +25,8 @@ import { scene } from "./scene.js";
 import { Terrain } from "./terrain.js";
 import { LensFlare } from "./LensFlare.js";
 import { texture } from "./texture.js";
+import obeliskVert from "./assets/shaders/obelisk.vert?raw";
+import obeliskFrag from "./assets/shaders/obelisk.frag?raw";
 
 import {
   computeSunDirection,
@@ -90,9 +93,9 @@ class TerrainApp {
     this.sunStrengthBase = 1.2;
     this.sunDirection = new THREE.Vector3(0, 1, 0);
     this.currentSunIntensity = 1.0;
-    this.sunWarmth = 0.55;
+    this.sunWarmth = 0.75;
     this.sunLightColor = new THREE.Color(1.0, 0.85, 0.65);
-    this.ambientStrength = 0.9;
+    this.ambientStrength = 0.3;
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
     this.ambientDirection = new THREE.Vector3(1, 0, 0);
     this.normalSmoothFactor = 0.65;
@@ -153,7 +156,7 @@ class TerrainApp {
     this.sky2 = null;
     this.sunMesh = null;
     this.heightSmoothStrength = 0.02;
-    this.heightGain = 0.74;
+    this.heightGain = 0.84;
     this.skyKeyframes = SKY_KEYFRAMES;
 
     this.applyShaderEnvironment = this.applyShaderEnvironment.bind(this);
@@ -531,6 +534,8 @@ class TerrainApp {
 
   setupDebugHelpers() {
     const obeliskHeight = 420;
+    const spikeHeight = 80;
+    // Main obelisk body (tapered cylinder)
     const obeliskGeometry = new THREE.CylinderGeometry(
       28,
       52,
@@ -539,24 +544,67 @@ class TerrainApp {
       1
     );
 
-    const obeliskMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xe4e8f2,
-      metalness: 0.45,
-      roughness: 0.06,
-      reflectivity: 0.95,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.03,
-      envMapIntensity: 1.25,
-      emissive: new THREE.Color(0x1a1d25),
-      emissiveIntensity: 0.12,
-    });
+    // Sharp spike on top (cone)
+    const spikeGeometry = new THREE.ConeGeometry(15, spikeHeight, 6);
 
+    // Try custom shader first, fallback to standard material if it fails
+    let obeliskMaterial;
+    try {
+      obeliskMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uBaseColor: { value: new THREE.Color(0xd0d8e0) }, // Silver color
+          uSunDirection: { value: this.sunDirection.clone() },
+          uSunIntensity: { value: this.currentSunIntensity },
+          uSunColor: { value: this.sunLightColor.clone() },
+          uAmbientStrength: { value: this.ambientStrength },
+          uAmbientColor: { value: this.ambientColor.clone() },
+        },
+        vertexShader: obeliskVert,
+        fragmentShader: obeliskFrag,
+      });
+      console.log("Obelisk custom shader created successfully");
+    } catch (error) {
+      console.error("Shader creation failed, using fallback:", error);
+      // Fallback to simple visible material
+      obeliskMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff6600, // Bright orange for visibility
+      });
+    }
+
+    // Create meshes
     const obelisk = new THREE.Mesh(obeliskGeometry, obeliskMaterial);
-    obelisk.position.set(200, 120, obeliskHeight * 0.5);
+    const spike = new THREE.Mesh(spikeGeometry, obeliskMaterial);
+
+    // Create group to combine both parts
+    const obeliskGroup = new THREE.Group();
+
+    // Rotate to stand upright (CylinderGeometry is Y-up, we need Z-up)
+    obelisk.rotation.x = Math.PI / 2;
+    spike.rotation.x = Math.PI / 2;
+
+    // Position spike on top of obelisk
+    spike.position.z = obeliskHeight * 0.5 + spikeHeight * 0.5;
+
+    obeliskGroup.add(obelisk);
+    obeliskGroup.add(spike);
+
+    // Position partially embedded in terrain
+    const obeliskX = 200;
+    const obeliskY = 120;
+    const terrainHeight = sampleHeight(obeliskX, obeliskY);
+    const finalZ = terrainHeight - obeliskHeight * 0.2; // Embed 20% into terrain
+
+    obeliskGroup.position.set(obeliskX, obeliskY, finalZ);
     obelisk.castShadow = true;
     obelisk.receiveShadow = true;
-    scene.add(obelisk);
-    this.debugObelisk = obelisk;
+    spike.castShadow = true;
+    spike.receiveShadow = true;
+    scene.add(obeliskGroup);
+    this.debugObelisk = obeliskGroup;
+
+    console.log(`Obelisk created at position: (${obeliskX}, ${obeliskY}, ${finalZ.toFixed(2)})`);
+    console.log(`Terrain height at obelisk: ${terrainHeight.toFixed(2)}`);
+    console.log("Obelisk with spike added to scene");
 
     this.debugAmbientLight = new THREE.AmbientLight(0xffffff, 0.35);
     scene.add(this.debugAmbientLight);
@@ -1273,6 +1321,31 @@ class TerrainApp {
       this.lensFlare.setSunIntensity(this.currentSunIntensity);
       this.lensFlare.setSunColor(this.sunLightColor);
     }
+
+    // Update obelisk shader uniforms for all meshes in the group
+    if (this.debugObelisk && this.debugObelisk.isGroup) {
+      this.debugObelisk.children.forEach(mesh => {
+        if (mesh.material && mesh.material.uniforms) {
+          const uniforms = mesh.material.uniforms;
+
+          if (uniforms.uSunDirection) {
+            uniforms.uSunDirection.value.copy(this.sunDirection);
+          }
+          if (uniforms.uSunIntensity) {
+            uniforms.uSunIntensity.value = this.currentSunIntensity;
+          }
+          if (uniforms.uSunColor) {
+            uniforms.uSunColor.value.copy(this.sunLightColor);
+          }
+          if (uniforms.uAmbientStrength) {
+            uniforms.uAmbientStrength.value = this.ambientStrength;
+          }
+          if (uniforms.uAmbientColor) {
+            uniforms.uAmbientColor.value.copy(this.ambientColor);
+          }
+        }
+      });
+    }
   }
 
   updateDebugLight() {
@@ -1314,7 +1387,7 @@ class TerrainApp {
     if (this.introActive) {
       const radius = 900 + 65 * Math.sin(this.introElapsed * 0.45);
       const angle = this.introElapsed * 0.18;
-      const height = 170 + 55 * Math.sin(this.introElapsed * 0.2);
+      const height = 210 + 55 * Math.sin(this.introElapsed * 0.2);
       const lookOrbit = 120 * Math.sin(this.introElapsed * 0.6);
 
       camera.position.set(

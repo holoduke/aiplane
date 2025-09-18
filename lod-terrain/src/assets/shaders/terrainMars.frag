@@ -18,7 +18,7 @@ uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
 #include <terrainShadow.glsl>
 
-uniform sampler2D uRock;
+uniform sampler2D uMars;
 
 varying float vMorphFactor;
 varying vec3 vNormal;
@@ -52,70 +52,49 @@ void main() {
   float shadowFactor = computeShadowFactor(vPosition);
   float texScale = 0.025;
 
-  // Base rock texture with Martian tint
-  vec3 rockColor = texture2D(uRock, texScale * vPosition.xy).rgb;
-  rockColor = mix(rockColor, vec3(0.45, 0.25, 0.15), 0.6); // Rusty brown base
+  // Clean Mars color with height-based shading
+  vec3 baseColor = vec3(0.8, 0.6, 0.4); // Solid Mars-like color
 
-  // Martian surface variations
-  float slope = 1.0 - clamp(dot(normal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0);
-
-  // Generate noise for surface variation
-  float noise1 = hash21(vPosition.xy * 0.08);
-  float noise2 = hash21(vPosition.yx * 0.15 + 23.7);
-  float noise3 = hash21(vPosition.xy * 0.32 + 45.2);
-  float combinedNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
-
-  // Different Martian soil colors
-  vec3 marsRed = vec3(0.7, 0.25, 0.15);      // Iron oxide red
-  vec3 marsOrange = vec3(0.8, 0.4, 0.2);     // Rusty orange
-  vec3 marsBrown = vec3(0.5, 0.3, 0.2);      // Dark soil
-  vec3 marsYellow = vec3(0.6, 0.5, 0.25);    // Dusty areas
-
-  // Height-based color variation (like sediment layers)
-  float heightFactor = clamp(height / 100.0, 0.0, 1.0);
-  vec3 lowColor = mix(marsRed, marsBrown, combinedNoise);
-  vec3 midColor = mix(marsOrange, marsRed, combinedNoise * 0.7);
-  vec3 highColor = mix(marsYellow, marsOrange, combinedNoise * 0.5);
-
-  vec3 heightColor = mix(lowColor, midColor, smoothstep(0.3, 0.7, heightFactor));
-  heightColor = mix(heightColor, highColor, smoothstep(0.6, 1.0, heightFactor));
-
-  // Slope-based variation (exposed rock on steep slopes)
-  float slopeMask = pow(slope, 0.8);
-  vec3 rockMarsColor = mix(rockColor, vec3(0.6, 0.35, 0.25), 0.4);
-  vec3 surfaceColor = mix(heightColor, rockMarsColor, slopeMask * 0.6);
-
-  // Add dust/sand in flat areas
-  float flatMask = 1.0 - slope;
-  vec3 dustColor = mix(marsRed, marsYellow, combinedNoise);
-  surfaceColor = mix(surfaceColor, dustColor, flatMask * 0.3 * combinedNoise);
-
-  vec3 baseColor = surfaceColor;
-
-  // Sun lighting with Mars atmosphere tint
+  // Smooth transition between flat and rocky areas
   vec3 sunDir = normalize(uSunDirection);
-  float sunStrength = clamp(uSunIntensity, 0.0, 4.0) * shadowFactor;
   float diffuse = max(dot(normal, sunDir), 0.0);
+  float ambient = 0.2; // Reduced ambient for darker shadows
+  float lighting = ambient + diffuse * 0.8 * shadowFactor; // Increased diffuse contrast
 
-  // Martian atmosphere scatters more red light
-  baseColor = mix(vec3(0.08, 0.04, 0.03), baseColor, 0.25 + 0.75 * pow(diffuse, 0.9) * sunStrength);
+  // Calculate transition factor for smooth blending
+  float transitionFactor = smoothstep(30.0, 40.0, height); // Smooth transition from 30 to 80
 
-  float sunInfluence = clamp(diffuse * sunStrength, 0.0, 1.0);
-  vec3 sunTint = mix(vec3(0.8, 0.6, 0.5), vec3(1.1, 0.8, 0.4), clamp(uSunWarmth, 0.0, 1.0));
-  baseColor = mix(baseColor, baseColor * sunTint, sunInfluence * 0.4);
+  if (height < 80.0) {
+    // Calculate noise intensity based on height - minimum noise at bottom, more textured higher up
+    float heightBasedNoise = smoothstep(0.0, 60.0, height); // 0 at bottom, 1 at height 60
+    float noiseIntensity = mix(0.15, 1.2, heightBasedNoise); // Minimum 15% noise at bottom, 120% at top
 
-  // Ambient lighting
-  vec3 ambientDir = normalize(uAmbientDirection);
-  float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
-  vec3 marsAmbient = mix(uAmbientColor, vec3(0.6, 0.4, 0.3), 0.5); // Reddish ambient
-  baseColor += marsAmbient * ambientTerm * 0.8;
+    // Sample mars texture at different scales for flat areas
+    vec3 texture1 = texture2D(uMars, vPosition.xy * 0.015).rgb;
+    vec3 texture2 = texture2D(uMars, vPosition.xy * 0.03).rgb;
+    vec3 textureColor = mix(texture1, texture2, 0.3);
 
-  // Specular highlights (dusty surface, low specularity)
-  vec3 viewDir = normalize(cameraPosition - vPosition);
-  vec3 halfVector = normalize(viewDir + sunDir);
-  float specular = pow(max(dot(normal, halfVector), 0.0), 8.0) * sunStrength * uSpecularStrength;
-  vec3 specTint = mix(vec3(0.5, 0.4, 0.3), sunTint, 0.4);
-  baseColor += specTint * specular * 0.2; // Low specularity for dusty Mars surface
+    // Blend texture with smooth color based on height and apply lighting with shadows
+    vec3 smoothColor = vec3(0.85, 0.5, 0.35); // Reddish Mars color
+    vec3 textureBlend = mix(smoothColor, textureColor, noiseIntensity);
+
+    // Mix between minimal lighting (for very flat areas) and full lighting (for higher areas)
+    vec3 simpleFlatColor = textureBlend * (0.7 + 0.3 * shadowFactor); // Minimal lighting but still receives shadows
+    vec3 litFlatColor = textureBlend * (ambient + diffuse * 0.8 * shadowFactor); // Full lighting and shadows
+
+    // Transition factor for lighting influence (0 at very bottom, 1 at transition height)
+    float lightingMix = smoothstep(10.0, 40.0, height);
+    vec3 flatColor = mix(simpleFlatColor, litFlatColor, lightingMix);
+    
+    // Lit rocky color for higher areas - same reddish color
+    vec3 rockyColor = vec3(0.85, 0.5, 0.35) * lighting;
+
+    // Smooth transition between flat and rocky
+    baseColor = mix(flatColor, rockyColor, transitionFactor);
+  } else {
+    // Full rocky areas with normal lighting - same reddish color
+    baseColor = vec3(0.85, 0.5, 0.35) * lighting;
+  }
 
   // Martian atmosphere fog (butterscotch/orange tint)
   float distToCamera = viewDistance;

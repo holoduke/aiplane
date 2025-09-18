@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { texture as terrainTextures } from "./texture.js";
 import { scene } from "./scene.js";
 import terrainVert from "./assets/shaders/terrain.vert?raw";
+import terrainMarsVert from "./assets/shaders/terrainMars.vert?raw";
 import terrainFrag from "./assets/shaders/terrain.frag?raw";
 import terrainSnowFrag from "./assets/shaders/terrainSnow.frag?raw";
 import terrainToonFrag from "./assets/shaders/terrainToon.frag?raw";
@@ -40,14 +41,43 @@ function processShader(shaderSource) {
 
 // Pre-process shaders on load for efficiency
 const PROCESSED_VERT_SHADER = processShader(terrainVert);
+const PROCESSED_MARS_VERT_SHADER = processShader(terrainMarsVert);
 const SHADER_PROGRAMS = [
-  { name: "Volcanic", source: processShader(terrainLavaFrag) },
-  { name: "Terrain", source: processShader(terrainFrag) },
-  { name: "Snowy", source: processShader(terrainSnowFrag) },
-  { name: "Toon", source: processShader(terrainToonFrag) },
-  { name: "Realistic", source: processShader(terrainRealisticFrag) },
-  { name: "Crystal", source: processShader(terrainCrystalFrag) },
-  { name: "Mars", source: processShader(terrainMarsFrag) },
+  {
+    name: "Volcanic",
+    source: processShader(terrainLavaFrag),
+    vertexShader: PROCESSED_VERT_SHADER,
+  },
+  {
+    name: "Terrain",
+    source: processShader(terrainFrag),
+    vertexShader: PROCESSED_VERT_SHADER,
+  },
+  {
+    name: "Snowy",
+    source: processShader(terrainSnowFrag),
+    vertexShader: PROCESSED_VERT_SHADER,
+  },
+  {
+    name: "Toon",
+    source: processShader(terrainToonFrag),
+    vertexShader: PROCESSED_VERT_SHADER,
+  },
+  {
+    name: "Realistic",
+    source: processShader(terrainRealisticFrag),
+    vertexShader: PROCESSED_VERT_SHADER,
+  },
+  {
+    name: "Crystal",
+    source: processShader(terrainCrystalFrag),
+    vertexShader: PROCESSED_VERT_SHADER,
+  },
+  {
+    name: "Mars",
+    source: processShader(terrainMarsFrag),
+    vertexShader: PROCESSED_MARS_VERT_SHADER,
+  },
 ];
 
 // --- Main Terrain Class ---
@@ -136,6 +166,7 @@ export class Terrain extends THREE.Object3D {
       uGrass: { value: terrainTextures.grass },
       uRock: { value: terrainTextures.rock },
       uSnow: { value: terrainTextures.snow },
+      uMars: { value: terrainTextures.mars },
       uTileOffset: { value: new THREE.Vector2(x, y) },
       uScale: { value: scale },
       uTileResolution: { value: this.resolution },
@@ -176,16 +207,17 @@ export class Terrain extends THREE.Object3D {
       uShadowMap2: { value: null },
     };
 
+    const currentShaderProgram = SHADER_PROGRAMS[this.activeShaderIndex];
     const terrainMaterial = new THREE.ShaderMaterial({
       uniforms,
-      vertexShader: PROCESSED_VERT_SHADER,
-      fragmentShader: SHADER_PROGRAMS[this.activeShaderIndex].source,
+      vertexShader: currentShaderProgram.vertexShader || PROCESSED_VERT_SHADER,
+      fragmentShader: currentShaderProgram.source,
       transparent: true,
     });
 
     const depthMaterial = new THREE.ShaderMaterial({
       uniforms,
-      vertexShader: PROCESSED_VERT_SHADER,
+      vertexShader: currentShaderProgram.vertexShader || PROCESSED_VERT_SHADER,
       fragmentShader: terrainDepthFrag,
       transparent: false,
       depthWrite: true,
@@ -211,9 +243,17 @@ export class Terrain extends THREE.Object3D {
 
     this.children.forEach((tile) => {
       const mainMaterial = tile.userData?.mainMaterial;
+      const depthMaterial = tile.userData?.depthMaterial;
       if (mainMaterial instanceof THREE.ShaderMaterial) {
         mainMaterial.fragmentShader = shader.source;
+        mainMaterial.vertexShader =
+          shader.vertexShader || PROCESSED_VERT_SHADER;
         mainMaterial.needsUpdate = true;
+      }
+      if (depthMaterial instanceof THREE.ShaderMaterial) {
+        depthMaterial.vertexShader =
+          shader.vertexShader || PROCESSED_VERT_SHADER;
+        depthMaterial.needsUpdate = true;
       }
     });
 

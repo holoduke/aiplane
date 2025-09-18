@@ -97,6 +97,26 @@ export function setNoiseHeightGain(gain) {
   applySmoothing(currentSmoothStrength);
 }
 
+export function sampleHeight(x, y) {
+  // Same height calculation as used in the shaders
+  const st = { x: x / 1024.0, y: y / 1024.0 };
+
+  // Sample the base texture
+  const u = Math.floor((st.x % 1.0) * noiseWidth);
+  const v = Math.floor((st.y % 1.0) * noiseWidth);
+  const index = Math.min(size - 1, Math.max(0, v * noiseWidth + u));
+  let h = (textureData[index] / 255.0) * 1024.0;
+
+  // Add detail layer (16x scale)
+  const u16 = Math.floor(((st.x * 16.0) % 1.0) * noiseWidth);
+  const v16 = Math.floor(((st.y * 16.0) % 1.0) * noiseWidth);
+  const index16 = Math.min(size - 1, Math.max(0, v16 * noiseWidth + u16));
+  h += (textureData[index16] / 255.0) * 64.0;
+
+  // Apply the same transformation as in shaders: h * h / 2000.0
+  return (h * h) / 2000.0;
+}
+
 function initializeHeightField() {
   generateBaseHeight();
   applySmoothing(currentSmoothStrength);
