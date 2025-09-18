@@ -17,6 +17,7 @@ uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
 uniform vec3 uSkyTintColor;
 uniform float uSkyTintStrength;
+#include <terrainShadow.glsl>
 
 varying float vMorphFactor;
 varying vec3 vNormal;
@@ -108,13 +109,15 @@ void main() {
   vec3 refinedNormal = normalize(mix(baseNormal, getNormal(), uSmoothFactor));
   vec3 sunDir = normalize(uSunDirection);
   vec3 viewDir = normalize(cameraPosition - vPosition);
+  float viewDistance = length(cameraPosition - vPosition);
+  float shadowFactor = computeShadowFactor(vPosition);
 
   vec3 prism = prismPalette(vPosition);
   float facing = clamp(dot(refinedNormal, viewDir), 0.0, 1.0);
   float fresnel = pow(1.0 - facing, 2.5);
   vec3 color = mix(prism * 0.4, prism, fresnel);
 
-  float sunStrength = clamp(uSunIntensity, 0.0, 6.0);
+  float sunStrength = clamp(uSunIntensity, 0.0, 6.0) * shadowFactor;
   float diffuse = max(dot(refinedNormal, sunDir), 0.0);
   color += prism * pow(diffuse, 1.5) * sunStrength * 0.6;
 
@@ -129,14 +132,13 @@ void main() {
   float tintMix = uSkyTintStrength * pow(skyFacing, 0.8);
   color = mix(color, uSkyTintColor * 1.35, tintMix);
 
-  float distToCamera = length(cameraPosition - vPosition);
   float fogRange = max(uFogFar - uFogNear, 0.0001);
-  float fogFactor = clamp((distToCamera - uFogNear) / fogRange, 0.0, 1.0);
+  float fogFactor = clamp((viewDistance - uFogNear) / fogRange, 0.0, 1.0);
   vec3 fogged = mix(color, uFogColor, fogFactor * 0.9);
 
   float edgeFade = 1.0;
   if (uFadeEnd > uFadeStart) {
-    edgeFade = 1.0 - clamp((distToCamera - uFadeStart) / (uFadeEnd - uFadeStart), 0.0, 1.0);
+    edgeFade = 1.0 - clamp((viewDistance - uFadeStart) / (uFadeEnd - uFadeStart), 0.0, 1.0);
   }
 
   gl_FragColor = vec4(fogged * edgeFade, edgeFade);

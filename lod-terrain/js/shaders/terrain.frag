@@ -17,6 +17,7 @@ uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
 uniform vec3 uSkyTintColor;
 uniform float uSkyTintStrength;
+#include <terrainShadow.glsl>
 
 varying float vMorphFactor;
 varying vec3 vNormal;
@@ -76,7 +77,9 @@ void main() {
   vec3 normal = normalize(mix(normalize(vNormal), getNormal(), uSmoothFactor));
 
   vec3 sunDir = normalize(uSunDirection);
-  float sunStrength = clamp(uSunIntensity, 0.0, 4.0);
+  float viewDistance = length(cameraPosition - vPosition);
+  float shadowFactor = computeShadowFactor(vPosition);
+  float sunStrength = clamp(uSunIntensity, 0.0, 4.0) * shadowFactor;
   float diffuse = max(dot(normal, sunDir), 0.0);
   float diffuseTerm = pow(diffuse, 0.75) * sunStrength;
   color = mix(vec3(0.05, 0.05, 0.08), color, clamp(0.25 + diffuseTerm, 0.0, 1.2));
@@ -100,7 +103,7 @@ void main() {
   color = mix( color, vec3( 1.0, 0.9, 0.8 ), fogFactor );
 
   // Add distance fog
-  float distToCamera = length(cameraPosition - vPosition);
+  float distToCamera = viewDistance;
   float fogRange = max(uFogFar - uFogNear, 0.0001);
   fogFactor = clamp((distToCamera - uFogNear) / fogRange, 0.0, 1.0);
   //fogFactor = fogFactor * ( 1.0 - clamp( ( camH - 5.0 ) / 8.0, 0.0, 1.0 ) );

@@ -17,6 +17,7 @@ uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
 uniform vec3 uSkyTintColor;
 uniform float uSkyTintStrength;
+#include <terrainShadow.glsl>
 
 uniform sampler2D uGrass;
 uniform sampler2D uRock;
@@ -53,7 +54,9 @@ void main() {
   vec3 terrainNormal = normalize(cross(dFdx(vPosition), dFdy(vPosition)));
   vec3 normal = normalize(mix(normalize(vNormal), terrainNormal, uSmoothFactor));
   vec3 sunDir = normalize(uSunDirection);
-  float sunStrength = clamp(uSunIntensity, 0.0, 4.0);
+  float viewDistance = length(cameraPosition - vPosition);
+  float shadowFactor = computeShadowFactor(vPosition);
+  float sunStrength = clamp(uSunIntensity, 0.0, 4.0) * shadowFactor;
 
   // Combine textures based on height and normal (use rougher normal from vertex shader)
   float texScale = 0.03;
@@ -76,8 +79,8 @@ void main() {
 
   // Incident light (generate shadows and highlights)
   float diffuse = max(dot(normal, sunDir), 0.0);
-  float shadowFactor = 0.03 + 0.97 * pow(diffuse, 0.72) * sunStrength;
-  color = mix(vec3(0.02, 0.02, 0.03), color, clamp(shadowFactor, 0.0, 1.2));
+  float lightMix = 0.03 + 0.97 * pow(diffuse, 0.72) * sunStrength;
+  color = mix(vec3(0.02, 0.02, 0.03), color, clamp(lightMix, 0.0, 1.2));
   color = mix(color, vec3(0.81, 0.9, 1.0), 0.2 * clamp(diffuse * sunStrength, 0.0, 1.0));
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
@@ -106,7 +109,7 @@ void main() {
   color = mix( color, fogColor, fogFactor );
 
   // Add distance fog
-  float distToCamera = length(cameraPosition - vPosition);
+  float distToCamera = viewDistance;
   float fogRange = max(uFogFar - uFogNear, 0.0001);
   fogFactor = clamp((distToCamera - uFogNear) / fogRange, 0.0, 1.0);
   //fogFactor = fogFactor * ( 1.0 - clamp( ( camH - 5.0 ) / 8.0, 0.0, 1.0 ) );
@@ -115,8 +118,8 @@ void main() {
 
   float edgeFade = 1.0;
   if (uFadeEnd > uFadeStart) {
-    float distToCamera = length(cameraPosition - vPosition);
-    edgeFade = 1.0 - clamp((distToCamera - uFadeStart) / (uFadeEnd - uFadeStart), 0.0, 1.0);
+    float distToCameraFade = viewDistance;
+    edgeFade = 1.0 - clamp((distToCameraFade - uFadeStart) / (uFadeEnd - uFadeStart), 0.0, 1.0);
   }
   color *= edgeFade;
 

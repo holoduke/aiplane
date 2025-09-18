@@ -17,6 +17,7 @@ uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
 uniform vec3 uSkyTintColor;
 uniform float uSkyTintStrength;
+#include <terrainShadow.glsl>
 
 uniform sampler2D uGrass;
 uniform sampler2D uRock;
@@ -44,6 +45,8 @@ vec3 getNormal() {
 
 void main() {
   vec3 normal = normalize(mix(vNormal, getNormal(), uSmoothFactor));
+  float viewDistance = length(cameraPosition - vPosition);
+  float shadowFactor = computeShadowFactor(vPosition);
   vec3 up = vec3(0.0, 0.0, 1.0);
   float slope = clamp(dot(normal, up), 0.0, 1.0);
 
@@ -91,7 +94,7 @@ void main() {
   float waterContribution = waterWeight / total;
 
   vec3 sunDir = normalize(uSunDirection);
-  float sunStrength = clamp(uSunIntensity, 0.0, 4.0);
+  float sunStrength = clamp(uSunIntensity, 0.0, 4.0) * shadowFactor;
   float incidence = max(dot(sunDir, normal), 0.0);
   incidence = pow(incidence, 0.8);
   color = mix(vec3(0.08, 0.06, 0.07), color, clamp(0.25 + 0.8 * incidence * sunStrength, 0.0, 1.2));
@@ -126,7 +129,7 @@ void main() {
     );
   }
 
-  float distToCamera = length(cameraPosition - vPosition);
+  float distToCamera = viewDistance;
   float fogRange = max(uFogFar - uFogNear, 0.0001);
   float fogFactor = clamp((distToCamera - uFogNear) / fogRange, 0.0, 1.0);
   vec3 fogTint = mix(uFogColor, vec3(0.78, 0.88, 1.0), 0.45);

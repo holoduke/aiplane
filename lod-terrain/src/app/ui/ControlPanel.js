@@ -91,6 +91,7 @@ export function createControlPanel({
   const atmosphere = createSection("Atmosphere", { defaultOpen: true });
   const terrain = createSection("Terrain", { defaultOpen: true });
   const lighting = createSection("Lighting", { defaultOpen: false });
+  const shadows = createSection("Shadows", { defaultOpen: false });
   const postFx = createSection("Post FX", { defaultOpen: false });
 
   const fogLabel = atmosphere.addLabel("Fog near: 10%");
@@ -323,6 +324,113 @@ export function createControlPanel({
       sunTimeLabel.textContent = `Time: ${value.toFixed(1)}h`;
       app.updateSun();
     },
+  });
+
+  const shadowToggle = shadows.addLabel(
+    `Shadows: ${app.shadowsEnabled ? "On" : "Off"}`
+  );
+  shadowToggle.style.cursor = "pointer";
+  shadowToggle.style.userSelect = "none";
+  shadowToggle.addEventListener("click", () => {
+    app.setShadowEnabled(!app.shadowsEnabled);
+    shadowToggle.textContent = `Shadows: ${app.shadowsEnabled ? "On" : "Off"}`;
+  });
+
+  const shadowStrengthLabel = shadows.addLabel(
+    `Shadow strength: ${Math.round(app.shadowStrength * 100)}%`
+  );
+  shadows.addSlider({
+    min: 0,
+    max: 100,
+    value: Math.round(app.shadowStrength * 100),
+    onInput: (value) => {
+      app.setShadowStrength(value / 100);
+      shadowStrengthLabel.textContent = `Shadow strength: ${value}%`;
+    },
+  });
+
+  const shadowSoftnessLabel = shadows.addLabel(
+    `Shadow softness: ${app.shadowSoftness.toFixed(2)}`
+  );
+  shadows.addSlider({
+    min: 10,
+    max: 400,
+    value: Math.round(app.shadowSoftness * 100),
+    onInput: (value) => {
+      const softness = Math.min(Math.max(value / 100, 0.1), 4.0);
+      app.setShadowSoftness(softness);
+      shadowSoftnessLabel.textContent = `Shadow softness: ${softness.toFixed(2)}`;
+    },
+  });
+
+  const shadowBiasLabel = shadows.addLabel(
+    `Shadow bias: ${app.shadowBias.toExponential(2)}`
+  );
+  shadows.addSlider({
+    min: 5,
+    max: 300,
+    value: Math.round(app.shadowBias * 100000.0),
+    onInput: (value) => {
+      const bias = Math.min(Math.max(value / 100000.0, 0.00001), 0.01);
+      app.setShadowBias(bias);
+      shadowBiasLabel.textContent = `Shadow bias: ${bias.toExponential(2)}`;
+    },
+  });
+
+  const shadowDistanceLabel = shadows.addLabel(
+    `Shadow distance: ${Math.round(app.shadowMaxDistance)}`
+  );
+  shadows.addSlider({
+    min: 100,
+    max: 7000,
+    step: 100,
+    value: Math.round(app.shadowMaxDistance),
+    onInput: (value) => {
+      app.setShadowMaxDistance(value);
+      shadowDistanceLabel.textContent = `Shadow distance: ${Math.round(
+        app.shadowMaxDistance
+      )}`;
+    },
+  });
+
+  const shadowResolutionLabel = shadows.addLabel(
+    `Shadow resolution: ${app.shadowResolution}`
+  );
+  shadows.addSlider({
+    min: 256,
+    max: 2048,
+    step: 256,
+    value: app.shadowResolution,
+    onInput: (value, slider) => {
+      app.setShadowResolution(value);
+      shadowResolutionLabel.textContent = `Shadow resolution: ${app.shadowResolution}`;
+      slider.value = String(app.shadowResolution);
+    },
+  });
+
+  const shadowDebugLabel = shadows.addLabel(
+    `Show cascades: ${app.shadowDebugEnabled ? "On" : "Off"}`
+  );
+  shadowDebugLabel.style.cursor = "pointer";
+  shadowDebugLabel.style.userSelect = "none";
+  shadowDebugLabel.addEventListener("click", () => {
+    const next = !app.shadowDebugEnabled;
+    app.setShadowDebugEnabled(next);
+    shadowDebugLabel.textContent = `Show cascades: ${next ? "On" : "Off"}`;
+  });
+
+  const cascadeLabels = ["Cascade 1", "Cascade 2", "Cascade 3"];
+  cascadeLabels.forEach((labelText, index) => {
+    const label = shadows.addLabel(
+      `${labelText}: ${app.shadowCascadeEnabled[index] ? "On" : "Off"}`
+    );
+    label.style.cursor = "pointer";
+    label.style.userSelect = "none";
+    label.addEventListener("click", () => {
+      const nextState = !app.shadowCascadeEnabled[index];
+      app.setShadowCascadeEnabled(index, nextState);
+      label.textContent = `${labelText}: ${nextState ? "On" : "Off"}`;
+    });
   });
 
   const bloomToggle = postFx.addLabel(`Bloom: ${app.bloomEnabled ? "On" : "Off"}`);

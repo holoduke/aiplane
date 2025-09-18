@@ -41,6 +41,8 @@ const WORLD_UP = new THREE.Vector3(0, 0, 1);
 const _tmpDirection = new THREE.Vector3();
 const _tmpRight = new THREE.Vector3();
 const _tmpLookTarget = new THREE.Vector3();
+const _tmpFocus = new THREE.Vector3();
+const _tmpOffset = new THREE.Vector3();
 const _mouseState = { lastX: 0, lastY: 0 };
 const _hudEl = document.createElement("div");
 const _skyBlendColor = new THREE.Color();
@@ -53,7 +55,7 @@ class TerrainApp {
     this.moveSpeed = 2.0;
     this.lookSpeed = 0.004;
     this.stats = null;
-    this.useFreeCamera = false;
+    this.useFreeCamera = true;
     this.lookTarget = null;
     this.pointerLocked = false;
     this.mouseDragging = false;
@@ -76,20 +78,42 @@ class TerrainApp {
     this.aaSubpixelBlending = 1.0;
     this.aaContrastThreshold = 0.0312;
     this.aaRelativeThreshold = 0.063;
-    this.sunTime = 15.3;
-    this.sunStrengthBase = 0.4;
+    this.sunTime = 16.7;
+    this.sunStrengthBase = 1.2;
     this.sunDirection = new THREE.Vector3(0, 1, 0);
     this.currentSunIntensity = 1.0;
-    this.ambientStrength = 1.19;
+    this.ambientStrength = 0.9;
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
     this.ambientDirection = new THREE.Vector3(1, 0, 0);
-    this.normalSmoothFactor = 0.4;
+    this.normalSmoothFactor = 0.65;
     this.specularStrength = 1.0;
     this.skyTintStrength = 0.15;
     this.skyTintColor = new THREE.Color(0.62, 0.72, 0.88);
     this.contrastAdjustment = 0.1;
     this.brightnessAdjustment = -0.06;
     this.noiseResolution = getNoiseWidth();
+    this.shadowsEnabled = true;
+    this.shadowCascadeCount = 3;
+    this.shadowResolution = 2048;
+    this.shadowLambda = 0.6;
+    this.shadowMaxDistance = 4100;
+    this.shadowBias = 0.0015;
+    this.shadowStrength = 1.0;
+    this.shadowSoftness = 1.0;
+    this.shadowCascades = [];
+    this.shadowMatrices = [];
+    this.shadowSplitsVec = new THREE.Vector4(0, 0, 0, 0);
+    this.shadowTempCorners = Array.from(
+      { length: 8 },
+      () => new THREE.Vector3()
+    );
+    this.debugAmbientLight = null;
+    this.debugSunLight = null;
+    this.cameraForward = new THREE.Vector3(0, 1, 0);
+    this.viewMatrix = new THREE.Matrix4();
+    this.shadowCascadeEnabled = [true, true, true];
+    this.shadowDebugEnabled = true;
+    this.shadowDebugHelpers = [];
     this.introActive = true;
     this.introElapsed = 0;
     this.introOverlay = null;
@@ -110,14 +134,14 @@ class TerrainApp {
     this.lensFlare = null;
     this.sunWorldPosition = new THREE.Vector3();
     this.sunDistance = 15000;
-    this.terrainLevels = 7;
-    this.terrainResolution = 196;
+    this.terrainLevels = 5;
+    this.terrainResolution = 192;
     this.terrain = null;
     this.center = null;
     this.sky = null;
     this.sky2 = null;
     this.sunMesh = null;
-    this.heightSmoothStrength = DEFAULT_NOISE_SMOOTHING;
+    this.heightSmoothStrength = 0.15;
     this.heightGain = 0.74;
     this.skyKeyframes = SKY_KEYFRAMES;
 
@@ -133,6 +157,15 @@ class TerrainApp {
     this.setAntialiasContrast = this.setAntialiasContrast.bind(this);
     this.setAntialiasRelative = this.setAntialiasRelative.bind(this);
     this.setNoiseResolution = this.setNoiseResolution.bind(this);
+    this.setupShadows = this.setupShadows.bind(this);
+    this.renderShadowMaps = this.renderShadowMaps.bind(this);
+    this.setShadowEnabled = this.setShadowEnabled.bind(this);
+    this.setShadowStrength = this.setShadowStrength.bind(this);
+    this.setShadowBias = this.setShadowBias.bind(this);
+    this.setShadowMaxDistance = this.setShadowMaxDistance.bind(this);
+    this.setShadowResolution = this.setShadowResolution.bind(this);
+    this.setShadowCascadeEnabled = this.setShadowCascadeEnabled.bind(this);
+    this.setShadowSoftness = this.setShadowSoftness.bind(this);
   }
 
   init() {
@@ -140,22 +173,32 @@ class TerrainApp {
     this.setupHud();
 
     const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    this.terrainResolution = isMobile ? 96 : 256;
+    this.terrainResolution = isMobile ? 96 : 192;
     setNoiseSmoothing(this.heightSmoothStrength);
     setNoiseHeightGain(this.heightGain);
+
     this.createTerrain();
 
     this.setupPostProcessing();
+    this.setupShadows();
     this.setupLensFlare();
     this.setupSunMesh();
     this.setupDebugHelpers();
     this.setupSky();
     this.setupIntroOverlay();
 
-    camera.position.set(450, 750, 50);
+    camera.position.set(0, 0, 50);
     camera.up.copy(WORLD_UP);
-    this.center = new THREE.Vector3(205, 135, 0);
+    camera.lookAt(new THREE.Vector3(0, 1, 0));
+    camera.updateMatrixWorld(true);
+    this.viewMatrix.copy(camera.matrixWorldInverse);
+    camera.getWorldDirection(this.cameraForward);
+    this.cameraForward.normalize();
+
+    this.center = new THREE.Vector3(0, 0, 0);
     this.lookTarget = this.center.clone();
+    this.updateDebugLight();
+    this.terrain?.updateViewMatrix(this.viewMatrix);
 
     this.setupEnvironmentToggle();
     this.setupControlPanel();
@@ -194,22 +237,34 @@ class TerrainApp {
       : 0;
 
     if (this.terrain) {
-      scene.remove(this.terrain);
+      const materials = new Set();
+      const geometries = new Set();
       this.terrain.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
+        if (child.geometry) geometries.add(child.geometry);
+        if (child.material) materials.add(child.material);
+        if (child.userData?.mainMaterial) {
+          materials.add(child.userData.mainMaterial);
+        }
+        if (child.userData?.depthMaterial) {
+          materials.add(child.userData.depthMaterial);
+        }
       });
+      materials.forEach((mat) => mat?.dispose?.());
+      geometries.forEach((geo) => geo?.dispose?.());
+      scene.remove(this.terrain);
     }
 
     this.terrain = new Terrain(
       noise,
       8192,
       this.terrainLevels,
-      this.terrainResolution
+      this.terrainResolution,
+      { enableShadows: this.shadowsEnabled }
     );
     scene.add(this.terrain);
 
     this.terrain.setShader(previousShaderIndex);
+    this.terrain.setShadowsEnabled(this.shadowsEnabled);
 
     this.terrain.updateMorphRegion(this.morphRegion);
     this.terrain.updateSun(this.sunDirection, this.currentSunIntensity);
@@ -221,6 +276,10 @@ class TerrainApp {
     this.terrain.updateSmoothFactor(this.normalSmoothFactor);
     this.terrain.updateSpecularStrength(this.specularStrength);
     this.terrain.updateSkyTint(this.skyTintColor, this.skyTintStrength);
+
+    this.applyShadowUniformsToTerrain();
+    this.terrain.updateCascadeEnabled(this.shadowCascadeEnabled);
+    this.terrain.updateViewMatrix(this.viewMatrix);
   }
 
   setupPostProcessing() {
@@ -332,6 +391,81 @@ class TerrainApp {
     this.noiseResolution = applied;
   }
 
+  setShadowEnabled(value) {
+    const enabled = Boolean(value);
+    if (this.shadowsEnabled === enabled) return;
+    this.shadowsEnabled = enabled;
+    if (enabled) {
+      this.setupShadows();
+      this.renderShadowMaps();
+    } else {
+      this.shadowCascades.forEach((cascade) => {
+        cascade.renderTarget?.dispose?.();
+      });
+      this.shadowCascades = [];
+      this.shadowMatrices = [];
+      this.shadowSplitsVec.set(0, 0, 0, 0);
+      this.terrain?.setShadowsEnabled(false);
+      this.applyShadowUniformsToTerrain();
+    }
+    this.terrain?.updateCascadeEnabled(this.shadowCascadeEnabled);
+  }
+
+  setShadowStrength(value) {
+    this.shadowStrength = THREE.MathUtils.clamp(value, 0.0, 1.0);
+    this.applyShadowUniformsToTerrain();
+    this.renderShadowMaps();
+  }
+
+  setShadowBias(value) {
+    this.shadowBias = THREE.MathUtils.clamp(value, 0.00001, 0.01);
+    this.applyShadowUniformsToTerrain();
+  }
+
+  setShadowMaxDistance(value) {
+    this.shadowMaxDistance = Math.max(50, value);
+    this.calculateShadowCascades();
+    this.renderShadowMaps();
+  }
+
+  setShadowResolution(value) {
+    const clamped = Math.max(128, Math.min(2048, value));
+    const pow2 = Math.pow(2, Math.round(Math.log2(clamped)));
+    if (pow2 === this.shadowResolution) return;
+    this.shadowResolution = pow2;
+    this.setupShadows();
+    this.renderShadowMaps();
+  }
+
+  setShadowSoftness(value) {
+    this.shadowSoftness = THREE.MathUtils.clamp(value, 0.1, 4.0);
+    this.applyShadowUniformsToTerrain();
+  }
+
+  setShadowCascadeEnabled(index, value) {
+    if (index < 0 || index >= this.shadowCascadeEnabled.length) return;
+    this.shadowCascadeEnabled[index] = Boolean(value);
+    this.terrain?.updateCascadeEnabled(this.shadowCascadeEnabled);
+    this.applyShadowUniformsToTerrain();
+    if (this.shadowsEnabled) {
+      this.renderShadowMaps();
+    }
+    if (this.shadowDebugHelpers[index]) {
+      this.shadowDebugHelpers[index].visible =
+        this.shadowDebugEnabled && this.shadowCascadeEnabled[index];
+    }
+  }
+
+  setShadowDebugEnabled(value) {
+    this.shadowDebugEnabled = Boolean(value);
+    this.shadowDebugHelpers.forEach((helper, idx) => {
+      if (helper) {
+        helper.visible =
+          this.shadowDebugEnabled && this.shadowCascadeEnabled[idx];
+      }
+    });
+  }
+
   setAntialiasEnabled(value) {
     this.aaEnabled = Boolean(value);
     this.applyAntialiasSettings();
@@ -384,14 +518,28 @@ class TerrainApp {
   }
 
   setupDebugHelpers() {
-    const debugGeometry = new THREE.BoxGeometry(50, 50, 50);
-    const debugMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      wireframe: true,
+    const debugGeometry = new THREE.BoxGeometry(60, 60, 300);
+    const debugMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff5522,
+      metalness: 0.2,
+      roughness: 0.65,
     });
     const cube = new THREE.Mesh(debugGeometry, debugMaterial);
-    cube.position.set(205, 135, 25);
+    cube.position.set(200, 120, 150);
+    cube.castShadow = true;
+    cube.receiveShadow = true;
     scene.add(cube);
+    this.debugCube = cube;
+
+    this.debugAmbientLight = new THREE.AmbientLight(0xffffff, 0.35);
+    scene.add(this.debugAmbientLight);
+
+    this.debugSunLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    this.debugSunLight.castShadow = false;
+    scene.add(this.debugSunLight);
+    this.debugSunLight.target.position.copy(this.center ?? new THREE.Vector3());
+    scene.add(this.debugSunLight.target);
+    this.updateDebugLight();
   }
 
   setupSky() {
@@ -415,6 +563,308 @@ class TerrainApp {
     this.sceneFog = scene.fog;
     this.baseFogNear = scene.fog.near;
     this.baseFogFar = scene.fog.far;
+  }
+
+  setupShadows() {
+    this.shadowCascades.forEach((cascade) => {
+      cascade.renderTarget?.dispose?.();
+      if (cascade.helper) {
+        cascade.helper.parent?.remove(cascade.helper);
+        cascade.helper.geometry?.dispose?.();
+        cascade.helper.material?.dispose?.();
+      }
+    });
+    this.shadowCascades = [];
+    this.shadowMatrices = [];
+    this.shadowDebugHelpers = [];
+
+    if (!this.shadowsEnabled) {
+      this.terrain?.setShadowsEnabled(false);
+      this.applyShadowUniformsToTerrain();
+      return;
+    }
+
+    for (let i = 0; i < this.shadowCascadeCount; i++) {
+      const renderTarget = new THREE.WebGLRenderTarget(
+        this.shadowResolution,
+        this.shadowResolution
+      );
+      renderTarget.texture.minFilter = THREE.LinearFilter;
+      renderTarget.texture.magFilter = THREE.LinearFilter;
+      renderTarget.texture.generateMipmaps = false;
+      renderTarget.depthTexture = new THREE.DepthTexture(
+        this.shadowResolution,
+        this.shadowResolution
+      );
+      renderTarget.depthTexture.type = THREE.UnsignedInt248Type;
+
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2048);
+      const helper = new THREE.CameraHelper(camera);
+      helper.visible = this.shadowDebugEnabled;
+      scene.add(helper);
+      this.shadowCascades.push({ camera, renderTarget, helper });
+      this.shadowDebugHelpers.push(helper);
+      this.shadowMatrices.push(new THREE.Matrix4());
+    }
+
+    this.shadowSplitsVec.set(0, 0, 0, this.shadowMaxDistance);
+    this.terrain?.setShadowsEnabled(true);
+    this.applyShadowUniformsToTerrain();
+  }
+
+  applyShadowUniformsToTerrain() {
+    if (!this.terrain) return;
+    const textures = [null, null, null];
+    for (
+      let i = 0;
+      i < Math.min(this.shadowCascades.length, textures.length);
+      i++
+    ) {
+      textures[i] = this.shadowCascades[i].renderTarget.depthTexture;
+    }
+    this.terrain.updateShadowUniforms(
+      this.shadowMatrices,
+      this.shadowSplitsVec,
+      textures,
+      this.shadowBias,
+      this.shadowStrength,
+      this.shadowsEnabled && this.shadowCascades.length > 0,
+      this.shadowCascadeEnabled,
+      this.shadowResolution,
+      this.shadowSoftness
+    );
+    this.terrain.updateCascadeEnabled(this.shadowCascadeEnabled);
+    if (this.viewMatrix) {
+      this.terrain.updateViewMatrix(this.viewMatrix);
+    }
+  }
+
+  calculateShadowCascades() {
+    if (!this.shadowCascades.length || !this.shadowsEnabled) return;
+
+    const shadowCamera = camera;
+    const near = shadowCamera.near;
+    const far = Math.min(this.shadowMaxDistance, shadowCamera.far);
+    const lambda = this.shadowLambda;
+    const cascadeCount = this.shadowCascades.length;
+
+    const splits = [];
+    for (let i = 0; i < cascadeCount; i++) {
+      const p = (i + 1) / cascadeCount;
+      const log = near * Math.pow(far / near, p);
+      const uniform = near + (far - near) * p;
+      const splitDist = THREE.MathUtils.lerp(uniform, log, lambda);
+      splits.push(splitDist);
+    }
+
+    this.shadowSplitsVec.set(
+      splits[0] || far,
+      splits[1] || far,
+      splits[2] || far,
+      far
+    );
+
+    let previousSplit = near;
+    for (let i = 0; i < cascadeCount; i++) {
+      const currentSplit = splits[i];
+      this.updateCascadeCamera(i, previousSplit, currentSplit, shadowCamera);
+      previousSplit = currentSplit;
+    }
+
+    this.applyShadowUniformsToTerrain();
+  }
+
+  updateCascadeCamera(index, nearDist, farDist, perspectiveCamera) {
+    const cascade = this.shadowCascades[index];
+    if (!cascade) return;
+
+    const camDir = new THREE.Vector3();
+    perspectiveCamera.getWorldDirection(camDir);
+    camDir.normalize();
+
+    const up = new THREE.Vector3().copy(perspectiveCamera.up).normalize();
+    const right = new THREE.Vector3().crossVectors(camDir, up).normalize();
+    up.crossVectors(right, camDir).normalize();
+
+    const camPos = new THREE.Vector3().copy(perspectiveCamera.position);
+
+    const tanHalfFov = Math.tan(
+      THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5)
+    );
+    const aspect = perspectiveCamera.aspect;
+
+    const nearCenter = camPos
+      .clone()
+      .add(camDir.clone().multiplyScalar(nearDist));
+    const farCenter = camPos
+      .clone()
+      .add(camDir.clone().multiplyScalar(farDist));
+
+    const nearHeight = tanHalfFov * nearDist;
+    const nearWidth = nearHeight * aspect;
+    const farHeight = tanHalfFov * farDist;
+    const farWidth = farHeight * aspect;
+
+    const corners = this.shadowTempCorners;
+
+    const nearUp = up.clone().multiplyScalar(nearHeight);
+    const nearRight = right.clone().multiplyScalar(nearWidth);
+    const farUp = up.clone().multiplyScalar(farHeight);
+    const farRight = right.clone().multiplyScalar(farWidth);
+
+    corners[0].copy(nearCenter).sub(nearRight).sub(nearUp);
+    corners[1].copy(nearCenter).add(nearRight).sub(nearUp);
+    corners[2].copy(nearCenter).sub(nearRight).add(nearUp);
+    corners[3].copy(nearCenter).add(nearRight).add(nearUp);
+    corners[4].copy(farCenter).sub(farRight).sub(farUp);
+    corners[5].copy(farCenter).add(farRight).sub(farUp);
+    corners[6].copy(farCenter).sub(farRight).add(farUp);
+    corners[7].copy(farCenter).add(farRight).add(farUp);
+
+    const lightDir = this.sunDirection.clone().normalize();
+    const lightForward = lightDir.clone().negate();
+    const worldUp =
+      Math.abs(lightForward.z) > 0.99
+        ? new THREE.Vector3(1, 0, 0)
+        : new THREE.Vector3(0, 0, 1);
+    const lightRight = new THREE.Vector3()
+      .crossVectors(worldUp, lightForward)
+      .normalize();
+    const lightUp = new THREE.Vector3()
+      .crossVectors(lightForward, lightRight)
+      .normalize();
+
+    const focusWorld = _tmpFocus.copy(perspectiveCamera.position);
+    let focusX = focusWorld.dot(lightRight);
+    let focusY = focusWorld.dot(lightUp);
+    const originalFocusX = focusX;
+    const originalFocusY = focusY;
+    const focusZ = focusWorld.dot(lightForward);
+
+    let radiusXY = 0;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    const extendBounds = (point) => {
+      const x = point.dot(lightRight);
+      const y = point.dot(lightUp);
+      const z = point.dot(lightForward);
+
+      const dx = x - focusX;
+      const dy = y - focusY;
+      radiusXY = Math.max(radiusXY, Math.hypot(dx, dy));
+
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    };
+
+    for (let i = 0; i < 8; i++) {
+      extendBounds(corners[i]);
+    }
+
+    extendBounds(focusWorld);
+    if (this.terrain?.offset) {
+      extendBounds(_tmpOffset.copy(this.terrain.offset));
+    }
+
+    const cascadeCount = this.shadowCascades.length || 1;
+    const cascadeT = cascadeCount > 1 ? index / (cascadeCount - 1) : 0;
+
+    const groundReach = THREE.MathUtils.lerp(400, this.shadowMaxDistance, cascadeT);
+    extendBounds(focusWorld.clone().addScaledVector(WORLD_UP, -groundReach));
+    const marginXY = THREE.MathUtils.lerp(18, 60, cascadeT);
+    const marginZ = THREE.MathUtils.lerp(50, 180, cascadeT);
+
+    radiusXY += marginXY;
+    minZ -= marginZ;
+    maxZ += marginZ;
+
+    const halfWidth = Math.max(radiusXY, 1e-3);
+    const halfHeight = halfWidth;
+
+    const depth = Math.max(1.0, maxZ - minZ);
+    const centerZ = (minZ + maxZ) * 0.5;
+    const cameraOffset = depth * 0.5;
+
+    const texelSize = (halfWidth * 2) / this.shadowResolution;
+    if (texelSize > 0) {
+      focusX = Math.round(focusX / texelSize) * texelSize;
+      focusY = Math.round(focusY / texelSize) * texelSize;
+    }
+
+    const centerWorld = focusWorld
+      .clone()
+      .add(lightRight.clone().multiplyScalar(focusX - originalFocusX))
+      .add(lightUp.clone().multiplyScalar(focusY - originalFocusY))
+      .add(lightForward.clone().multiplyScalar(centerZ - focusZ));
+
+    const lightCamera = cascade.camera;
+    const eyeWorld = centerWorld
+      .clone()
+      .sub(lightForward.clone().multiplyScalar(cameraOffset));
+    lightCamera.position.copy(eyeWorld);
+    lightCamera.up.copy(lightUp);
+    lightCamera.lookAt(centerWorld);
+    lightCamera.updateMatrixWorld(true);
+    lightCamera.matrixWorldInverse.copy(lightCamera.matrixWorld).invert();
+
+    lightCamera.left = -halfWidth;
+    lightCamera.right = halfWidth;
+    lightCamera.bottom = -halfHeight;
+    lightCamera.top = halfHeight;
+    lightCamera.near = 0.1;
+    lightCamera.far = depth;
+    lightCamera.updateProjectionMatrix();
+    lightCamera.updateMatrixWorld(true);
+    lightCamera.matrixWorldInverse.copy(lightCamera.matrixWorld).invert();
+
+    this.shadowMatrices[index]
+      .copy(lightCamera.projectionMatrix)
+      .multiply(lightCamera.matrixWorldInverse);
+
+    if (cascade.helper) {
+      cascade.helper.update();
+      cascade.helper.visible =
+        this.shadowDebugEnabled && this.shadowCascadeEnabled[index];
+    }
+  }
+
+  renderShadowMaps() {
+    if (!this.shadowsEnabled || !this.shadowCascades.length || !this.terrain) {
+      return;
+    }
+
+    this.calculateShadowCascades();
+
+    const previousRenderTarget = renderer.getRenderTarget();
+    const previousAutoClear = renderer.autoClear;
+
+    const skyVisible = this.sky?.visible;
+    const atmosphereVisible = this.sky2?.visible;
+    const sunMeshVisible = this.sunMesh?.visible;
+    if (this.sky) this.sky.visible = false;
+    if (this.sky2) this.sky2.visible = false;
+    if (this.sunMesh) this.sunMesh.visible = false;
+
+    this.terrain.useDepthMaterial(true);
+
+    renderer.autoClear = true;
+    for (let i = 0; i < this.shadowCascades.length; i++) {
+      const cascade = this.shadowCascades[i];
+      if (!this.shadowCascadeEnabled[i]) continue;
+      renderer.setRenderTarget(cascade.renderTarget);
+      renderer.clear(true, true, true);
+      renderer.render(scene, cascade.camera);
+    }
+
+    this.terrain.useDepthMaterial(false);
+
+    if (this.sky !== undefined) this.sky.visible = skyVisible;
+    if (this.sky2 !== undefined) this.sky2.visible = atmosphereVisible;
+    if (this.sunMesh !== undefined) this.sunMesh.visible = sunMeshVisible;
+
+    renderer.setRenderTarget(previousRenderTarget);
+    renderer.autoClear = previousAutoClear;
   }
 
   setupIntroOverlay() {
@@ -700,6 +1150,8 @@ class TerrainApp {
       this.terrain.updateSkyTint(this.skyTintColor, this.skyTintStrength);
     }
 
+    this.updateDebugLight();
+
     if (material.atmosphere.uniforms.uHorizonColor) {
       material.atmosphere.uniforms.uHorizonColor.value.copy(
         skySample.horizonColor
@@ -719,6 +1171,18 @@ class TerrainApp {
 
     if (this.lensFlare) {
       this.lensFlare.setSunIntensity(this.currentSunIntensity);
+    }
+  }
+
+  updateDebugLight() {
+    if (!this.debugSunLight) return;
+    const focus = this.center ? this.center.clone() : new THREE.Vector3();
+    const offset = this.sunDirection.clone().normalize().multiplyScalar(600);
+    this.debugSunLight.position.copy(focus).add(offset);
+    this.debugSunLight.intensity = Math.max(0.1, this.currentSunIntensity);
+    if (this.debugSunLight.target) {
+      this.debugSunLight.target.position.copy(focus);
+      this.debugSunLight.target.updateMatrixWorld(true);
     }
   }
 
@@ -848,6 +1312,8 @@ class TerrainApp {
     }
 
     camera.updateMatrixWorld(true);
+    this.viewMatrix.copy(camera.matrixWorldInverse);
+    this.terrain?.updateViewMatrix(this.viewMatrix);
 
     if (this.lensFlare) {
       this.lensFlare.update(deltaTime, this.sunWorldPosition, this.terrain);
@@ -868,6 +1334,10 @@ class TerrainApp {
     )}, ${this.cameraRotation.y.toFixed(2)}\nFog: ${
       this.fogEnabled ? "On" : "Off"
     }\nSun: ${this.sunTime.toFixed(1)}h`;
+
+    if (this.shadowsEnabled && this.shadowCascades.length) {
+      this.renderShadowMaps();
+    }
 
     if (this.composer && this.postProcessingEnabled) {
       const shouldBloom = this.bloomEnabled && this.bloomStrength > 0.001;

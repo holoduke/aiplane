@@ -15,6 +15,7 @@ uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
 uniform vec3 uAmbientColor;
 uniform float uSmoothFactor;
+#include <terrainShadow.glsl>
 
 uniform sampler2D uRock;
 
@@ -46,12 +47,14 @@ float hash21(vec2 p) {
 void main() {
   vec3 normal = normalize(mix(vNormal, getNormal(), uSmoothFactor));
   float height = vPosition.z;
+  float viewDistance = length(cameraPosition - vPosition);
+  float shadowFactor = computeShadowFactor(vPosition);
   float texScale = 0.03;
 
   vec3 rockColor = texture2D(uRock, texScale * vPosition.xy).rgb;
   rockColor = mix(rockColor, vec3(0.3, 0.25, 0.22), 0.35);
 
-  float lavaLevel = 6.5;
+  float lavaLevel = 8.5;
   float depthMask = smoothstep(lavaLevel + 2.0, lavaLevel - 14.0, height);
   float slope = 1.0 - clamp(dot(normal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0);
   float slopeMask = pow(slope, 1.05);
@@ -64,7 +67,7 @@ void main() {
 
   float lavaMask = clamp(mix(depthMask, depthMask * slopeMask, 0.25) + 0.22 * slopeMask, 0.0, 1.0);
 
-  float ridgeHeightMask = smoothstep(lavaLevel + 7.0, lavaLevel + 1.5, height) * smoothstep(lavaLevel + 12.0, lavaLevel + 4.0, height);
+  float ridgeHeightMask = smoothstep(lavaLevel + 2.0, lavaLevel + 1.5, height) * smoothstep(lavaLevel + 8.0, lavaLevel + 2.0, height);
   float ridgeNoise = pow(clamp(hash21(vPosition.xy * 0.34 + 12.37), 0.0, 1.0), 2.5);
   float ridgeContribution = ridgeHeightMask * slopeMask * ridgeNoise;
   lavaMask = clamp(lavaMask + 0.25 * ridgeContribution, 0.0, 1.0);
@@ -73,12 +76,12 @@ void main() {
 
   vec3 lavaHot = vec3(4.0, 1.25, 0.25);
   vec3 lavaCool = vec3(1.2, 0.14, 0.03);
-  vec3 lavaColor = mix(lavaHot, lavaCool, pow(lavaNoise, 1.5));
+  vec3 lavaColor = mix(lavaHot, lavaCool, pow(lavaNoise, 2.5));
 
   vec3 baseColor = mix(rockColor, lavaColor, lavaMask);
 
   vec3 sunDir = normalize(uSunDirection);
-  float sunStrength = clamp(uSunIntensity, 0.0, 4.0);
+  float sunStrength = clamp(uSunIntensity, 0.0, 4.0) * shadowFactor;
   float diffuse = max(dot(normal, sunDir), 0.0);
   baseColor = mix(vec3(0.05, 0.04, 0.05), baseColor, 0.35 + 0.65 * pow(diffuse, 0.8) * sunStrength);
 
@@ -94,7 +97,7 @@ void main() {
   vec3 lavaGlow = lavaColor * lavaMask * 6.0;
   baseColor += lavaGlow;
 
-  float distToCamera = length(cameraPosition - vPosition);
+  float distToCamera = viewDistance;
   float fogRange = max(uFogFar - uFogNear, 0.0001);
   float fogFactor = clamp((distToCamera - uFogNear) / fogRange, 0.0, 1.0);
   vec3 fogTint = mix(uFogColor, vec3(0.7, 0.25, 0.15), 0.25);
