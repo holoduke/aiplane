@@ -1,17 +1,18 @@
 import * as THREE from "three";
 import { texture as terrainTextures } from "./texture.js";
 import { scene } from "./scene.js";
-import terrainVert from "../js/shaders/terrain.vert?raw";
-import terrainFrag from "../js/shaders/terrain.frag?raw";
-import terrainSnowFrag from "../js/shaders/terrainSnow.frag?raw";
-import terrainToonFrag from "../js/shaders/terrainToon.frag?raw";
-import terrainRealisticFrag from "../js/shaders/terrainRealistic.frag?raw";
-import terrainLavaFrag from "../js/shaders/terrainLava.frag?raw";
-import terrainCrystalFrag from "../js/shaders/terrainCrystal.frag?raw";
-import terrainDepthFrag from "../js/shaders/terrainDepth.frag?raw";
-import colorScaleGlsl from "../js/shaders/colorScale.glsl?raw";
-import edgemorphGlsl from "../js/shaders/edgemorph.glsl?raw";
-import terrainShadowGlsl from "../js/shaders/terrainShadow.glsl?raw";
+import terrainVert from "./assets/shaders/terrain.vert?raw";
+import terrainFrag from "./assets/shaders/terrain.frag?raw";
+import terrainSnowFrag from "./assets/shaders/terrainSnow.frag?raw";
+import terrainToonFrag from "./assets/shaders/terrainToon.frag?raw";
+import terrainRealisticFrag from "./assets/shaders/terrainRealistic.frag?raw";
+import terrainLavaFrag from "./assets/shaders/terrainLava.frag?raw";
+import terrainCrystalFrag from "./assets/shaders/terrainCrystal.frag?raw";
+import terrainMarsFrag from "./assets/shaders/terrainMars.frag?raw";
+import terrainDepthFrag from "./assets/shaders/terrainDepth.frag?raw";
+import colorScaleGlsl from "./assets/shaders/colorScale.glsl?raw";
+import edgemorphGlsl from "./assets/shaders/edgemorph.glsl?raw";
+import terrainShadowGlsl from "./assets/shaders/terrainShadow.glsl?raw";
 
 // --- Constants ---
 const Edge = Object.freeze({
@@ -46,11 +47,18 @@ const SHADER_PROGRAMS = [
   { name: "Toon", source: processShader(terrainToonFrag) },
   { name: "Realistic", source: processShader(terrainRealisticFrag) },
   { name: "Crystal", source: processShader(terrainCrystalFrag) },
+  { name: "Mars", source: processShader(terrainMarsFrag) },
 ];
 
 // --- Main Terrain Class ---
 export class Terrain extends THREE.Object3D {
-  constructor(heightData, worldWidth = 1024, levels = 12, resolution = 128, { enableShadows = false } = {}) {
+  constructor(
+    heightData,
+    worldWidth = 1024,
+    levels = 12,
+    resolution = 128,
+    { enableShadows = false } = {}
+  ) {
     super();
 
     this.worldWidth = worldWidth;
@@ -132,9 +140,7 @@ export class Terrain extends THREE.Object3D {
       uScale: { value: scale },
       uTileResolution: { value: this.resolution },
       uFogColor: {
-        value: scene.fog
-          ? scene.fog.color.clone()
-          : new THREE.Color(0x000000),
+        value: scene.fog ? scene.fog.color.clone() : new THREE.Color(0x000000),
       },
       uFogNear: { value: scene.fog ? scene.fog.near : 0 },
       uFogFar: { value: scene.fog ? scene.fog.far : 1 },
@@ -153,7 +159,10 @@ export class Terrain extends THREE.Object3D {
       uSkyTintStrength: { value: this.skyTintStrength },
       uViewMatrix: { value: new THREE.Matrix4() },
       uShadowMatrices: {
-        value: Array.from({ length: shadowMatrixCount }, () => new THREE.Matrix4()),
+        value: Array.from(
+          { length: shadowMatrixCount },
+          () => new THREE.Matrix4()
+        ),
       },
       uCascadeSplits: { value: new THREE.Vector4(0, 0, 0, 0) },
       uShadowBias: { value: 0.0015 },
@@ -295,7 +304,9 @@ export class Terrain extends THREE.Object3D {
   useDepthMaterial(useDepth) {
     this.children.forEach((tile) => {
       if (!tile.userData?.mainMaterial || !tile.userData?.depthMaterial) return;
-      tile.material = useDepth ? tile.userData.depthMaterial : tile.userData.mainMaterial;
+      tile.material = useDepth
+        ? tile.userData.depthMaterial
+        : tile.userData.mainMaterial;
     });
   }
 
@@ -343,9 +354,12 @@ export class Terrain extends THREE.Object3D {
         }
       }
       if (shadowMaps) {
-        if (uniforms.uShadowMap0) uniforms.uShadowMap0.value = shadowMaps[0] || null;
-        if (uniforms.uShadowMap1) uniforms.uShadowMap1.value = shadowMaps[1] || null;
-        if (uniforms.uShadowMap2) uniforms.uShadowMap2.value = shadowMaps[2] || null;
+        if (uniforms.uShadowMap0)
+          uniforms.uShadowMap0.value = shadowMaps[0] || null;
+        if (uniforms.uShadowMap1)
+          uniforms.uShadowMap1.value = shadowMaps[1] || null;
+        if (uniforms.uShadowMap2)
+          uniforms.uShadowMap2.value = shadowMaps[2] || null;
       }
       if (shadowResolution && uniforms.uShadowTexelSize) {
         const texel = 1.0 / shadowResolution;

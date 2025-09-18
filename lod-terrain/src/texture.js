@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const texturePath = "js/textures/";
+const texturePath = "src/assets/textures/";
 const loader = new THREE.TextureLoader();
 
 const sky = loader.load(texturePath + "sky.png");

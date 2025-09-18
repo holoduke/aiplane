@@ -1,0 +1,17 @@
+{
+  "width": 5000,
+  "height": 5000,
+  "maxHeight": 700,
+  "worldSize": 10000,
+  "heightScale": 700,
+  "seaLevel": 105,
+  "seed": 681281.6519684033,
+  "generated": "2025-09-11T11:21:57.974Z",
+  "techniques": [
+    "Octave noise for base terrain",
+    "Ridge noise for mountain ranges",
+    "Voronoi patterns for variety",
+    "Erosion simulation",
+    "Multi-layer composition"
+  ]
+}

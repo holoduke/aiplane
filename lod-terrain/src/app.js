@@ -30,12 +30,12 @@ import {
   sampleSkyColors,
   NEUTRAL_SKY_COLOR,
   SKY_KEYFRAMES,
-} from "./app/sky.js";
-import { createPostProcessing } from "./app/postprocessing.js";
-import { createIntroOverlay } from "./app/ui/IntroOverlay.js";
-import { createControlPanel } from "./app/ui/ControlPanel.js";
-import { applyEnvironment } from "./app/environment.js";
-import { createEnvironmentToggle } from "./app/ui/EnvironmentToggle.js";
+} from "./sky.js";
+import { createPostProcessing } from "./postprocessing.js";
+import { createIntroOverlay } from "./ui/IntroOverlay.js";
+import { createControlPanel } from "./ui/ControlPanel.js";
+import { applyEnvironment } from "./environment.js";
+import { createEnvironmentToggle } from "./ui/EnvironmentToggle.js";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 const SUN_COLOR_COOL = new THREE.Color(0.6, 0.75, 0.98);
@@ -123,7 +123,7 @@ class TerrainApp {
     this.cameraForward = new THREE.Vector3(0, 1, 0);
     this.viewMatrix = new THREE.Matrix4();
     this.shadowCascadeEnabled = [true, true, true];
-    this.shadowDebugEnabled = true;
+    this.shadowDebugEnabled = false;
     this.shadowDebugHelpers = [];
     this.introActive = true;
     this.introElapsed = 0;
@@ -152,7 +152,7 @@ class TerrainApp {
     this.sky = null;
     this.sky2 = null;
     this.sunMesh = null;
-    this.heightSmoothStrength = 0.15;
+    this.heightSmoothStrength = 0.02;
     this.heightGain = 0.74;
     this.skyKeyframes = SKY_KEYFRAMES;
 
@@ -820,9 +820,14 @@ class TerrainApp {
       this.shadowMaxDistance,
       cascadeT
     );
+    // Extend bounds downward for ground coverage
     extendBounds(focusWorld.clone().addScaledVector(WORLD_UP, -groundReach));
+
+    // Extend bounds upward for tall objects (especially important when looking down)
+    const skyReach = THREE.MathUtils.lerp(600, 1200, cascadeT);
+    extendBounds(focusWorld.clone().addScaledVector(WORLD_UP, skyReach));
     const marginXY = THREE.MathUtils.lerp(18, 60, cascadeT);
-    const marginZ = THREE.MathUtils.lerp(50, 180, cascadeT);
+    const marginZ = THREE.MathUtils.lerp(100, 300, cascadeT);
 
     const boundsCenterX = (minBounds.x + maxBounds.x) * 0.5;
     const boundsCenterY = (minBounds.y + maxBounds.y) * 0.5;
@@ -1214,7 +1219,11 @@ class TerrainApp {
     this.ambientDirection.copy(ambientDir);
 
     const warmth = THREE.MathUtils.clamp(this.sunWarmth, 0.0, 1.0);
-    this.ambientColor.lerpColors(AMBIENT_COLOR_COOL, AMBIENT_COLOR_WARM, warmth);
+    this.ambientColor.lerpColors(
+      AMBIENT_COLOR_COOL,
+      AMBIENT_COLOR_WARM,
+      warmth
+    );
     _tmpSunColor.lerpColors(SUN_COLOR_COOL, SUN_COLOR_WARM, warmth);
     this.sunLightColor.copy(_tmpSunColor);
 

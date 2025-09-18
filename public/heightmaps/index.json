@@ -1,0 +1,8 @@
+{
+  "chunkRadius": 8,
+  "chunkSize": 2000,
+  "resolution": 256,
+  "worldSeed": 12345,
+  "totalChunks": 256,
+  "worldSize": 32000
+}

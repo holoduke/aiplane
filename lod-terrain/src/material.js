@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { texture } from "./texture.js";
-import atmosphereVert from "../js/shaders/atmosphere.vert?raw";
-import atmosphereFrag from "../js/shaders/atmosphere.frag?raw";
+import atmosphereVert from "./assets/shaders/atmosphere.vert?raw";
+import atmosphereFrag from "./assets/shaders/atmosphere.frag?raw";
 
 export const material = {
   atmosphere: new THREE.ShaderMaterial({
