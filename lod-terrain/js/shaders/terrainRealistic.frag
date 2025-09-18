@@ -10,6 +10,7 @@ uniform float uFadeStart;
 uniform float uFadeEnd;
 uniform vec3 uSunDirection;
 uniform float uSunIntensity;
+uniform float uSunWarmth;
 uniform float uSpecularStrength;
 uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
@@ -98,11 +99,15 @@ void main() {
   float incidence = max(dot(sunDir, normal), 0.0);
   incidence = pow(incidence, 0.8);
   color = mix(vec3(0.08, 0.06, 0.07), color, clamp(0.25 + 0.8 * incidence * sunStrength, 0.0, 1.2));
-  vec3 warmTint = vec3(0.58, 0.35, 0.27);
-  vec3 coolTint = vec3(0.55, 0.74, 0.78);
+  float clampedWarmth = clamp(uSunWarmth, 0.0, 1.0);
+  vec3 sunTint = mix(vec3(0.62, 0.75, 0.98), vec3(1.05, 0.72, 0.48), clampedWarmth);
+  vec3 warmTint = mix(vec3(0.52, 0.62, 0.88), vec3(0.72, 0.4, 0.28), clampedWarmth);
+  vec3 coolTint = mix(vec3(0.62, 0.78, 0.92), vec3(0.48, 0.68, 0.82), 1.0 - clampedWarmth);
   float reverseFacing = max(dot(normal, -sunDir), 0.0);
   color = mix(color, warmTint, clamp(rockWeight * reverseFacing * 0.45 * sunStrength, 0.0, 0.6));
   color = mix(color, coolTint, clamp(rockWeight * incidence * 0.25 * sunStrength, 0.0, 0.4));
+  float sunInfluence = clamp(incidence * sunStrength, 0.0, 1.0);
+  color = mix(color, color * sunTint, sunInfluence * 0.45);
 
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
@@ -116,7 +121,8 @@ void main() {
   vec3 viewDir = normalize(cameraPosition - vPosition);
   vec3 halfVector = normalize(viewDir + sunDir);
   float specular = pow(max(dot(normal, halfVector), 0.0), 20.0) * 1.6 * sunStrength * uSpecularStrength;
-  color = mix(color, vec3(0.92, 0.98, 1.0), 0.3 * specular * uSpecularStrength);
+  vec3 specTint = mix(vec3(0.92, 0.98, 1.0), sunTint, 0.6);
+  color = mix(color, specTint, 0.3 * specular * uSpecularStrength);
 
   if (waterContribution > 0.001) {
     float facing = clamp(1.0 - max(dot(normal, viewDir), 0.0), 0.0, 1.0);

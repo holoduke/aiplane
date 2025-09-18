@@ -10,6 +10,7 @@ uniform float uFadeStart;
 uniform float uFadeEnd;
 uniform vec3 uSunDirection;
 uniform float uSunIntensity;
+uniform float uSunWarmth;
 uniform float uSpecularStrength;
 uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
@@ -82,6 +83,9 @@ void main() {
   float lightMix = 0.03 + 0.97 * pow(diffuse, 0.72) * sunStrength;
   color = mix(vec3(0.02, 0.02, 0.03), color, clamp(lightMix, 0.0, 1.2));
   color = mix(color, vec3(0.81, 0.9, 1.0), 0.2 * clamp(diffuse * sunStrength, 0.0, 1.0));
+  float sunInfluence = clamp(diffuse * sunStrength, 0.0, 1.0);
+  vec3 sunTint = mix(vec3(0.62, 0.78, 1.02), vec3(1.04, 0.78, 0.5), clamp(uSunWarmth, 0.0, 1.0));
+  color = mix(color, color * sunTint, sunInfluence * 0.55);
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
   color += uAmbientColor * ambientTerm;
@@ -97,7 +101,8 @@ void main() {
   vec3 viewDir = normalize(cameraPosition - vPosition);
   vec3 halfVector = normalize(sunDir + viewDir);
   float specular = pow(max(dot(normal, halfVector), 0.0), 25.0) * sunStrength * uSpecularStrength;
-  color = mix(color, vec3(0.9, 0.98, 1.0), 0.15 * specular * uSpecularStrength);
+  vec3 specTint = mix(vec3(0.9, 0.98, 1.0), sunTint, 0.5);
+  color = mix(color, specTint, 0.15 * specular * uSpecularStrength);
 
   // Add height fog
   float fogFactor = clamp( 1.0 - vPosition.z / 155.0, 0.0, 1.0 );

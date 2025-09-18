@@ -10,6 +10,7 @@ uniform float uFadeStart;
 uniform float uFadeEnd;
 uniform vec3 uSunDirection;
 uniform float uSunIntensity;
+uniform float uSunWarmth;
 uniform float uSpecularStrength;
 uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
@@ -120,10 +121,14 @@ void main() {
   float sunStrength = clamp(uSunIntensity, 0.0, 6.0) * shadowFactor;
   float diffuse = max(dot(refinedNormal, sunDir), 0.0);
   color += prism * pow(diffuse, 1.5) * sunStrength * 0.6;
+  float sunInfluence = clamp(diffuse * sunStrength, 0.0, 1.0);
+  vec3 sunTint = mix(vec3(0.62, 0.75, 0.98), vec3(1.05, 0.72, 0.48), clamp(uSunWarmth, 0.0, 1.0));
+  color = mix(color, color * sunTint, sunInfluence * 0.4);
 
   vec3 halfVec = normalize(sunDir + viewDir);
   float specular = pow(max(dot(refinedNormal, halfVec), 0.0), 96.0);
-  color += vec3(1.2, 1.1, 1.4) * specular * uSpecularStrength * sunStrength * 2.4;
+  vec3 specTint = mix(vec3(1.2, 1.1, 1.4), sunTint, 0.65);
+  color += specTint * specular * uSpecularStrength * sunStrength * 2.4;
 
   float ambientTerm = max(dot(refinedNormal, normalize(uAmbientDirection)), 0.0);
   color += uAmbientColor * ambientTerm * (uAmbientIntensity * 1.2);

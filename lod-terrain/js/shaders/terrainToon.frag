@@ -11,6 +11,7 @@ uniform float uFadeStart;
 uniform float uFadeEnd;
 uniform vec3 uSunDirection;
 uniform float uSunIntensity;
+uniform float uSunWarmth;
 uniform float uSpecularStrength;
 uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
@@ -88,6 +89,9 @@ void main() {
   float litAttenuation = 0.03 + 0.97 * pow(incidence, 0.01) * sunStrength;
   color = mix(vec3(0.0, 0.0, 0.0), color, clamp(litAttenuation, 0.0, 1.2));
   color = mix(color, vec3(0.81, 0.9, 1.0), 0.2 * clamp(incidence * sunStrength, 0.0, 1.0));
+  float sunInfluence = clamp(incidence * sunStrength, 0.0, 1.0);
+  vec3 sunTint = mix(vec3(0.62, 0.75, 0.98), vec3(1.05, 0.72, 0.48), clamp(uSunWarmth, 0.0, 1.0));
+  color = mix(color, color * sunTint, sunInfluence * 0.6);
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
   color += uAmbientColor * ambientTerm;

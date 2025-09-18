@@ -85,6 +85,8 @@ export class LensFlare {
         baseOpacity: config.opacity,
         type: config.type,
         intensity: 1.0,
+        baseColor: config.color.clone(),
+        tintStrength: config.type === "sun" ? 0.85 : 0.4,
       });
       this.lensFlareGroup.add(mesh);
     });
@@ -165,6 +167,17 @@ export class LensFlare {
     mesh.userData.baseSize = config.size;
 
     return mesh;
+  }
+
+  setSunColor(color) {
+    if (!color) return;
+    this.flareElements.forEach((element) => {
+      const uniforms = element.mesh.material.uniforms;
+      if (!uniforms?.color) return;
+      uniforms.color.value
+        .copy(element.baseColor)
+        .lerp(color, element.tintStrength);
+    });
   }
 
   update(deltaTime, sunWorldPosition, terrain) {

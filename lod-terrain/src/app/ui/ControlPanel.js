@@ -313,6 +313,20 @@ export function createControlPanel({
     },
   });
 
+  const sunWarmthLabel = lighting.addLabel(
+    `Sun warmth: ${Math.round(app.sunWarmth * 100)}%`
+  );
+  lighting.addSlider({
+    min: 0,
+    max: 100,
+    value: Math.round(app.sunWarmth * 100),
+    onInput: (value) => {
+      app.sunWarmth = value / 100;
+      sunWarmthLabel.textContent = `Sun warmth: ${value}%`;
+      app.updateSun();
+    },
+  });
+
   const sunTimeLabel = lighting.addLabel(`Time: ${app.sunTime.toFixed(1)}h`);
   lighting.addSlider({
     min: 0,

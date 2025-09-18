@@ -10,6 +10,7 @@ uniform float uFadeStart;
 uniform float uFadeEnd;
 uniform vec3 uSunDirection;
 uniform float uSunIntensity;
+uniform float uSunWarmth;
 uniform float uSpecularStrength;
 uniform vec3 uAmbientDirection;
 uniform float uAmbientIntensity;
@@ -84,6 +85,9 @@ void main() {
   float sunStrength = clamp(uSunIntensity, 0.0, 4.0) * shadowFactor;
   float diffuse = max(dot(normal, sunDir), 0.0);
   baseColor = mix(vec3(0.05, 0.04, 0.05), baseColor, 0.35 + 0.65 * pow(diffuse, 0.8) * sunStrength);
+  float sunInfluence = clamp(diffuse * sunStrength, 0.0, 1.0);
+  vec3 sunTint = mix(vec3(0.6, 0.72, 0.95), vec3(1.05, 0.7, 0.42), clamp(uSunWarmth, 0.0, 1.0));
+  baseColor = mix(baseColor, baseColor * sunTint, sunInfluence * 0.45);
 
   vec3 ambientDir = normalize(uAmbientDirection);
   float ambientTerm = max(dot(normal, ambientDir), 0.0) * uAmbientIntensity;
@@ -92,7 +96,8 @@ void main() {
   vec3 viewDir = normalize(cameraPosition - vPosition);
   vec3 halfVector = normalize(viewDir + sunDir);
   float specular = pow(max(dot(normal, halfVector), 0.0), 14.0) * sunStrength * uSpecularStrength;
-  baseColor += vec3(0.45, 0.42, 0.38) * specular * 0.6;
+  vec3 specTint = mix(vec3(0.45, 0.42, 0.38), sunTint, 0.55);
+  baseColor += specTint * specular * 0.6;
 
   vec3 lavaGlow = lavaColor * lavaMask * 6.0;
   baseColor += lavaGlow;

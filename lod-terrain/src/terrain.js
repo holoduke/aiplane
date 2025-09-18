@@ -63,6 +63,7 @@ export class Terrain extends THREE.Object3D {
     this.morphRegion = 0.3;
     this.sunDirection = new THREE.Vector3(0, 1, 0);
     this.sunIntensity = 1.0;
+    this.sunWarmth = 0.55;
     this.ambientDirection = new THREE.Vector3(1, 0, 0);
     this.ambientIntensity = 0.2;
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
@@ -140,6 +141,7 @@ export class Terrain extends THREE.Object3D {
       uMorphRegion: { value: this.morphRegion },
       uSunDirection: { value: this.sunDirection.clone() },
       uSunIntensity: { value: this.sunIntensity },
+      uSunWarmth: { value: this.sunWarmth },
       uAmbientDirection: { value: this.ambientDirection.clone() },
       uAmbientIntensity: { value: this.ambientIntensity },
       uAmbientColor: { value: this.ambientColor.clone() },
@@ -275,6 +277,18 @@ export class Terrain extends THREE.Object3D {
       if (uniforms.uSunIntensity) {
         uniforms.uSunIntensity.value = this.sunIntensity;
       }
+      if (uniforms.uSunWarmth) {
+        uniforms.uSunWarmth.value = this.sunWarmth;
+      }
+    });
+  }
+
+  updateSunWarmth(warmth) {
+    this.sunWarmth = warmth;
+    this.children.forEach((tile) => {
+      const uniforms = tile.userData?.mainMaterial?.uniforms;
+      if (!uniforms || !uniforms.uSunWarmth) return;
+      uniforms.uSunWarmth.value = this.sunWarmth;
     });
   }
 

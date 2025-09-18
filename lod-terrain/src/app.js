@@ -38,11 +38,19 @@ import { applyEnvironment } from "./app/environment.js";
 import { createEnvironmentToggle } from "./app/ui/EnvironmentToggle.js";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
+const SUN_COLOR_COOL = new THREE.Color(0.6, 0.75, 0.98);
+const SUN_COLOR_WARM = new THREE.Color(1.0, 0.75, 0.52);
+const AMBIENT_COLOR_COOL = new THREE.Color(0.32, 0.44, 0.6);
+const AMBIENT_COLOR_WARM = new THREE.Color(0.6, 0.48, 0.36);
+const SKY_TINT_COOL = new THREE.Color(0.62, 0.76, 0.98);
+const SKY_TINT_WARM = new THREE.Color(0.98, 0.68, 0.52);
 const _tmpDirection = new THREE.Vector3();
 const _tmpRight = new THREE.Vector3();
 const _tmpLookTarget = new THREE.Vector3();
 const _tmpFocus = new THREE.Vector3();
 const _tmpOffset = new THREE.Vector3();
+const _tmpSunColor = new THREE.Color();
+const _tmpSkyAdjust = new THREE.Color();
 const _mouseState = { lastX: 0, lastY: 0 };
 const _hudEl = document.createElement("div");
 const _skyBlendColor = new THREE.Color();
@@ -82,6 +90,8 @@ class TerrainApp {
     this.sunStrengthBase = 1.2;
     this.sunDirection = new THREE.Vector3(0, 1, 0);
     this.currentSunIntensity = 1.0;
+    this.sunWarmth = 0.55;
+    this.sunLightColor = new THREE.Color(1.0, 0.85, 0.65);
     this.ambientStrength = 0.9;
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
     this.ambientDirection = new THREE.Vector3(1, 0, 0);
@@ -498,6 +508,7 @@ class TerrainApp {
 
   setupLensFlare() {
     this.lensFlare = new LensFlare(scene, camera, renderer);
+    this.lensFlare.setSunColor(this.sunLightColor);
   }
 
   setupSunMesh() {
@@ -519,18 +530,33 @@ class TerrainApp {
   }
 
   setupDebugHelpers() {
-    const debugGeometry = new THREE.BoxGeometry(60, 60, 300);
-    const debugMaterial = new THREE.MeshStandardMaterial({
-      color: 0xff5522,
-      metalness: 0.2,
-      roughness: 0.65,
+    const obeliskHeight = 420;
+    const obeliskGeometry = new THREE.CylinderGeometry(
+      28,
+      52,
+      obeliskHeight,
+      6,
+      1
+    );
+
+    const obeliskMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xe4e8f2,
+      metalness: 0.45,
+      roughness: 0.06,
+      reflectivity: 0.95,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.03,
+      envMapIntensity: 1.25,
+      emissive: new THREE.Color(0x1a1d25),
+      emissiveIntensity: 0.12,
     });
-    const cube = new THREE.Mesh(debugGeometry, debugMaterial);
-    cube.position.set(200, 120, 150);
-    cube.castShadow = true;
-    cube.receiveShadow = true;
-    scene.add(cube);
-    this.debugCube = cube;
+
+    const obelisk = new THREE.Mesh(obeliskGeometry, obeliskMaterial);
+    obelisk.position.set(200, 120, obeliskHeight * 0.5);
+    obelisk.castShadow = true;
+    obelisk.receiveShadow = true;
+    scene.add(obelisk);
+    this.debugObelisk = obelisk;
 
     this.debugAmbientLight = new THREE.AmbientLight(0xffffff, 0.35);
     scene.add(this.debugAmbientLight);
@@ -1187,22 +1213,36 @@ class TerrainApp {
     ambientDir.normalize();
     this.ambientDirection.copy(ambientDir);
 
+    const warmth = THREE.MathUtils.clamp(this.sunWarmth, 0.0, 1.0);
+    this.ambientColor.lerpColors(AMBIENT_COLOR_COOL, AMBIENT_COLOR_WARM, warmth);
+    _tmpSunColor.lerpColors(SUN_COLOR_COOL, SUN_COLOR_WARM, warmth);
+    this.sunLightColor.copy(_tmpSunColor);
+
+    _skyBlendColor.copy(skySample.skyColor);
+    _skyBlendColor.lerp(skySample.horizonColor, 0.2);
+    _skyBlendColor.lerp(NEUTRAL_SKY_COLOR, 0.55);
+    this.skyTintColor.copy(_skyBlendColor);
+    _tmpSkyAdjust.lerpColors(SKY_TINT_COOL, SKY_TINT_WARM, warmth);
+    this.skyTintColor.lerp(_tmpSkyAdjust, 0.35);
+
     if (this.terrain) {
       this.terrain.updateSun(this.sunDirection, this.currentSunIntensity);
+      this.terrain.updateSunWarmth(this.sunWarmth);
       this.terrain.updateAmbient(
         ambientDir,
         this.ambientStrength,
         this.ambientColor
       );
-
-      _skyBlendColor.copy(skySample.skyColor);
-      _skyBlendColor.lerp(skySample.horizonColor, 0.2);
-      _skyBlendColor.lerp(NEUTRAL_SKY_COLOR, 0.55);
-      this.skyTintColor.copy(_skyBlendColor);
       this.terrain.updateSkyTint(this.skyTintColor, this.skyTintStrength);
     }
 
     this.updateDebugLight();
+    if (this.debugSunLight) {
+      this.debugSunLight.color.copy(this.sunLightColor);
+    }
+    if (this.debugAmbientLight) {
+      this.debugAmbientLight.color.copy(this.ambientColor);
+    }
 
     if (material.atmosphere.uniforms.uHorizonColor) {
       material.atmosphere.uniforms.uHorizonColor.value.copy(
@@ -1214,15 +1254,15 @@ class TerrainApp {
     }
 
     if (this.sunMesh) {
-      this.sunMesh.material.color.setHSL(
-        0.15,
-        0.3,
-        Math.max(0.2, this.currentSunIntensity)
-      );
+      const intensityTint = Math.max(0.35, this.currentSunIntensity);
+      this.sunMesh.material.color
+        .copy(this.sunLightColor)
+        .multiplyScalar(intensityTint);
     }
 
     if (this.lensFlare) {
       this.lensFlare.setSunIntensity(this.currentSunIntensity);
+      this.lensFlare.setSunColor(this.sunLightColor);
     }
   }
 
@@ -1369,6 +1409,7 @@ class TerrainApp {
 
     if (this.lensFlare) {
       this.lensFlare.update(deltaTime, this.sunWorldPosition, this.terrain);
+      this.lensFlare.setSunColor(this.sunLightColor);
       if (this.sunMesh) {
         this.sunMesh.visible =
           this.currentSunIntensity > 0.02 && !this.lensFlare.occluded;
