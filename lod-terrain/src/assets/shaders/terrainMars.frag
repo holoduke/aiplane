@@ -58,7 +58,7 @@ void main() {
   // Smooth transition between flat and rocky areas
   vec3 sunDir = normalize(uSunDirection);
   float diffuse = max(dot(normal, sunDir), 0.0);
-  float ambient = 0.2; // Reduced ambient for darker shadows
+  float ambient = 0.25; // Increased ambient for lighter mountain shadows
   float lighting = ambient + diffuse * 0.8 * shadowFactor; // Increased diffuse contrast
 
   // Calculate transition factor for smooth blending
@@ -79,11 +79,11 @@ void main() {
     vec3 textureBlend = mix(smoothColor, textureColor, noiseIntensity);
 
     // Mix between minimal lighting (for very flat areas) and full lighting (for higher areas)
-    vec3 simpleFlatColor = textureBlend * (0.7 + 0.3 * shadowFactor); // Minimal lighting but still receives shadows
+    vec3 simpleFlatColor = textureBlend * (0.5 + 0.5 * shadowFactor); // Darker shadows on flat terrain
     vec3 litFlatColor = textureBlend * (ambient + diffuse * 0.8 * shadowFactor); // Full lighting and shadows
 
     // Transition factor for lighting influence (0 at very bottom, 1 at transition height)
-    float lightingMix = smoothstep(10.0, 40.0, height);
+    float lightingMix = smoothstep(10.0, 16.0, height);
     vec3 flatColor = mix(simpleFlatColor, litFlatColor, lightingMix);
     
     // Lit rocky color for higher areas - same reddish color
