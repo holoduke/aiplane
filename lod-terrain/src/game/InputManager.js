@@ -5,6 +5,7 @@ export class InputManager {
     this.mouseX = 0
     this.mouseY = 0
     this.isMouseLocked = false
+    this.game = null // Will be set by Game class
 
     // Touch controls - virtual joystick style
     this.touchActive = false
@@ -40,6 +41,10 @@ export class InputManager {
 
     switch(event.code) {
       case 'Escape':
+        // Pause the game when Escape is pressed
+        if (this.game && this.game.isGameActive()) {
+          this.game.pauseGame()
+        }
         if (this.isMouseLocked) {
           document.exitPointerLock()
         }
@@ -73,7 +78,13 @@ export class InputManager {
   }
 
   onPointerLockChange() {
+    const wasMouseLocked = this.isMouseLocked
     this.isMouseLocked = document.pointerLockElement === document.body
+
+    // If mouse lock was lost (and we were previously locked), pause the game
+    if (wasMouseLocked && !this.isMouseLocked && this.game && this.game.isGameActive()) {
+      this.game.pauseGame()
+    }
   }
 
   onTouchStart(event) {

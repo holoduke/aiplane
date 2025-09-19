@@ -111,9 +111,9 @@ class TerrainApp {
     this.noiseResolution = getNoiseWidth();
     this.shadowsEnabled = true;
     this.shadowCascadeCount = 3;
-    this.shadowResolution = 2048;
+    this.shadowResolution = 4192;
     this.shadowLambda = 0.6;
-    this.shadowMaxDistance = 5000;
+    this.shadowMaxDistance = 3600;
     this.shadowBias = 0.0015;
     this.shadowStrength = 1.0;
     this.shadowSoftness = 1.0;
@@ -1020,7 +1020,7 @@ class TerrainApp {
   }
 
   setupControlPanel() {
-    createControlPanel({
+    this.controlPanel = createControlPanel({
       app: this,
       container,
       applyShaderEnvironment: this.applyShaderEnvironment,
@@ -1043,10 +1043,28 @@ class TerrainApp {
     // Make the game globally accessible for Player.js integration
     window.game = this.game;
 
-    // Show start screen
-    this.game.showStartScreen();
+    // Show start screen and hide control panel initially
+    this.game.uiManager.showStartScreen();
 
-    console.log('🎮 Game system integrated with TerrainApp');
+    // Hide control panel, controls info, position info, and environment toggle in main menu
+    if (this.controlPanel?.panel) {
+      this.controlPanel.panel.style.display = "none";
+    }
+    const controlsInfo = document.getElementById("controls-info");
+    if (controlsInfo) {
+      controlsInfo.style.display = "none";
+    }
+    // Hide position info (bottom right HUD)
+    const hudEl = document.querySelector('div[style*="bottom: 10px"][style*="right: 10px"]');
+    if (hudEl) {
+      hudEl.style.display = "none";
+    }
+    // Hide environment toggle (terrain selector)
+    if (this.environmentToggle?.element) {
+      this.environmentToggle.element.style.display = "none";
+    }
+
+    console.log("🎮 Game system integrated with TerrainApp");
   }
 
   setupInputHandlers() {

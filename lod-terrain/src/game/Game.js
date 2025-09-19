@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { Player } from "./Player.js";
 import { InputManager } from "./InputManager.js";
+import { CollisionDetector } from "./CollisionDetector.js";
+import { UIManager } from "../ui/UIManager.js";
 import { camera } from "../camera.js";
 import { scene } from "../scene.js";
 import { renderer } from "../renderer.js";
@@ -18,6 +20,8 @@ export class Game {
     this.gameOver = false;
 
     // Game systems
+    this.collisionDetector = new CollisionDetector(scene);
+    this.uiManager = new UIManager(this);
     this.inputManager = null; // Will be created after player
     this.player = null;
     this.enemyManager = null; // Will be added later
@@ -33,6 +37,11 @@ export class Game {
     // Performance tracking
     this.lastUpdateTime = 0;
     this.deltaTime = 0;
+
+    // Pause camera rotation
+    this.pauseCameraAngle = 0;
+    this.pauseCameraDistance = 500;
+    this.pauseCameraHeight = 200;
 
     console.log("🎮 Game system initialized");
   }
@@ -71,8 +80,9 @@ export class Game {
     // Disable mouse camera controls in game mode
     this.app.useFreeCamera = false;
 
-    // Hide any UI overlays
-    this.hideStartScreen();
+    // Use screen manager for proper transition
+    this.uiManager.screenManager.showGame();
+    this.hideUIForGameMode(mode);
 
     console.log(`✅ Game started in ${mode} mode`);
   }
@@ -85,6 +95,7 @@ export class Game {
 
     // Create input manager with player reference
     this.inputManager = new InputManager(this.player);
+    this.inputManager.game = this; // Set game reference for pause functionality
 
     // Wait for player to load
     let attempts = 0;
@@ -143,12 +154,12 @@ export class Game {
 
     if (this.gamePaused) {
       this.inputManager.disable();
+      this.uiManager.screenManager.showPause();
       console.log("⏸️ Game paused");
-      // Show pause UI here
     } else {
       this.inputManager.enable();
+      this.uiManager.screenManager.resumeGame();
       console.log("▶️ Game resumed");
-      // Hide pause UI here
     }
   }
 
@@ -158,6 +169,11 @@ export class Game {
     this.gameStarted = false;
     this.gamePaused = false;
     this.inputManager.disable();
+
+    // Release pointer lock for main menu interaction
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
 
     // Clean up player
     if (this.player && this.player.mesh) {
@@ -174,8 +190,11 @@ export class Game {
       }
     }
 
-    // Show start screen
-    this.showStartScreen();
+    // Use screen manager to return to main menu
+    this.uiManager.screenManager.showMainMenu();
+
+    // Hide UI elements for main menu (not float mode)
+    this.hideUIForMainMenu();
   }
 
   restartGame() {
@@ -191,18 +210,32 @@ export class Game {
   }
 
   update(deltaTime) {
-    if (!this.gameStarted || this.gamePaused || this.gameOver) return;
+    if (!this.gameStarted || this.gameOver) return;
 
     this.deltaTime = deltaTime;
+
+    // Handle pause camera rotation
+    if (this.gamePaused && this.player && this.player.mesh) {
+      this.updatePauseCamera(deltaTime);
+      return; // Don't update game logic when paused
+    }
 
     // Update input manager (handles player input automatically)
     if (this.inputManager && this.gameMode === "play") {
       this.inputManager.update(deltaTime);
     }
 
+    // Update collision detector
+    this.collisionDetector.update();
+
     // Update player
     if (this.player && this.gameMode === "play") {
       this.player.update(deltaTime);
+    }
+
+    // Handle laser collision detection centrally
+    if (this.player && this.player.lasers && this.gameMode === "play") {
+      this.handleLaserCollisions(deltaTime);
     }
 
     // Update other game systems
@@ -259,165 +292,67 @@ export class Game {
     }
   }
 
-  // UI Management
-  showStartScreen() {
-    let startScreen = document.getElementById("start-screen");
-    if (!startScreen) {
-      this.createStartScreen();
-      startScreen = document.getElementById("start-screen");
-    }
+  handleLaserCollisions(deltaTime) {
+    if (!this.player || !this.player.lasers) return;
 
-    if (startScreen) {
-      startScreen.style.display = "flex";
+    for (let i = this.player.lasers.length - 1; i >= 0; i--) {
+      const laser = this.player.lasers[i];
+
+      // Check terrain collision
+      const terrainCollision = this.collisionDetector.checkLaserTerrainCollision(
+        laser.position,
+        laser.velocity,
+        deltaTime
+      );
+
+      if (terrainCollision) {
+        console.log('🎯 Game: Laser hit terrain!', terrainCollision.point);
+
+        // Calculate reflection
+        const reflectedVelocity = this.collisionDetector.calculateReflection(
+          laser.velocity,
+          terrainCollision.normal,
+          0.8 // 80% energy retained
+        );
+
+        // Update laser properties
+        laser.velocity = reflectedVelocity;
+        laser.position.copy(terrainCollision.point);
+        laser.bounces = (laser.bounces || 0) + 1;
+
+        // Limit bounces to prevent infinite reflections
+        if (laser.bounces > 3) {
+          console.log('🔫💥 Game: Laser expired after 3 bounces');
+          this.scene.remove(laser.mesh);
+          this.scene.remove(laser.glow);
+          this.player.lasers.splice(i, 1);
+          continue;
+        }
+
+        // Debug: Turn laser orange when it hits terrain
+        laser.mesh.material.color.setHex(0xff6600); // Orange
+        laser.mesh.material.emissive.setHex(0xff6600);
+        laser.glow.material.color.setHex(0xff6600);
+        laser.glow.material.emissive.setHex(0xff6600);
+
+        // Add some visual effects for impact
+        laser.mesh.material.emissiveIntensity = Math.min(15.0, laser.mesh.material.emissiveIntensity * 1.2);
+        laser.glow.material.emissiveIntensity = Math.min(20.0, laser.glow.material.emissiveIntensity * 1.2);
+      }
+
+      // Check enemy collision
+      const enemyHits = this.collisionDetector.checkLaserEnemyCollision(laser.position, 150);
+      if (enemyHits.length > 0) {
+        console.log(`🔫💥 Game: Laser hit ${enemyHits.length} enemies!`);
+        // Remove laser on hit
+        this.scene.remove(laser.mesh);
+        this.scene.remove(laser.glow);
+        this.player.lasers.splice(i, 1);
+        continue;
+      }
     }
   }
 
-  hideStartScreen() {
-    const startScreen = document.getElementById("start-screen");
-    if (startScreen) {
-      startScreen.style.display = "none";
-    }
-  }
-
-  createStartScreen() {
-    // Check if start screen already exists
-    if (document.getElementById("start-screen")) return;
-
-    const startScreen = document.createElement("div");
-    startScreen.id = "start-screen";
-    startScreen.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      z-index: 1000;
-      font-family: 'Arial', sans-serif;
-      color: white;
-    `;
-
-    // Title
-    const title = document.createElement("h1");
-    title.textContent = "Fighter Jet Terrain";
-    title.style.cssText = `
-      font-size: 3rem;
-      margin-bottom: 2rem;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-      background: linear-gradient(45deg, #00aaff, #ff6600);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    `;
-
-    // Button container
-    const buttonContainer = document.createElement("div");
-    buttonContainer.style.cssText = `
-      display: flex;
-      gap: 2rem;
-      flex-direction: column;
-      align-items: center;
-    `;
-
-    // Play button
-    const playButton = document.createElement("button");
-    playButton.textContent = "PLAY";
-    playButton.style.cssText = `
-      padding: 1rem 3rem;
-      font-size: 1.5rem;
-      font-weight: bold;
-      background: linear-gradient(45deg, #00aa00, #00ff00);
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
-      transition: all 0.3s ease;
-      min-width: 200px;
-    `;
-
-    playButton.addEventListener("mouseenter", () => {
-      playButton.style.transform = "scale(1.1)";
-      playButton.style.boxShadow = "0 6px 12px rgba(0, 255, 0, 0.4)";
-    });
-
-    playButton.addEventListener("mouseleave", () => {
-      playButton.style.transform = "scale(1)";
-      playButton.style.boxShadow = "0 4px 8px rgba(0, 0, 0, 0.4)";
-    });
-
-    playButton.addEventListener("click", () => {
-      this.startGame("play");
-    });
-
-    // Float button
-    const floatButton = document.createElement("button");
-    floatButton.textContent = "FLOAT";
-    floatButton.style.cssText = `
-      padding: 1rem 3rem;
-      font-size: 1.5rem;
-      font-weight: bold;
-      background: linear-gradient(45deg, #0066cc, #00aaff);
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
-      transition: all 0.3s ease;
-      min-width: 200px;
-    `;
-
-    floatButton.addEventListener("mouseenter", () => {
-      floatButton.style.transform = "scale(1.1)";
-      floatButton.style.boxShadow = "0 6px 12px rgba(0, 170, 255, 0.4)";
-    });
-
-    floatButton.addEventListener("mouseleave", () => {
-      floatButton.style.transform = "scale(1)";
-      floatButton.style.boxShadow = "0 4px 8px rgba(0, 0, 0, 0.4)";
-    });
-
-    floatButton.addEventListener("click", () => {
-      this.startGame("float");
-    });
-
-    // Instructions
-    const instructions = document.createElement("div");
-    instructions.style.cssText = `
-      margin-top: 2rem;
-      text-align: center;
-      font-size: 1rem;
-      opacity: 0.8;
-      max-width: 600px;
-    `;
-
-    instructions.innerHTML = `
-      <p><strong>PLAY:</strong> Fly a fighter jet through the terrain</p>
-      <p><strong>FLOAT:</strong> Free camera exploration of the terrain</p>
-      <br>
-      <p style="font-size: 0.9rem; opacity: 0.6;">
-        Controls: WASD or Arrow Keys to move, Space to fire, Shift for bombs
-      </p>
-    `;
-
-    // Assemble the screen
-    buttonContainer.appendChild(playButton);
-    buttonContainer.appendChild(floatButton);
-
-    startScreen.appendChild(title);
-    startScreen.appendChild(buttonContainer);
-    startScreen.appendChild(instructions);
-
-    document.body.appendChild(startScreen);
-
-    console.log("📺 Start screen created");
-  }
 
   // Game state getters
   isGameActive() {
@@ -432,16 +367,98 @@ export class Game {
     return this.gameMode === "float";
   }
 
+  // UI visibility management
+  hideUIForGameMode(mode) {
+    if (mode === "play") {
+      // Hide control panel, intro overlay, and controls info in play mode
+      if (this.app.controlPanel?.panel) {
+        this.app.controlPanel.panel.style.display = "none";
+      }
+      if (this.app.introOverlay) {
+        this.app.introOverlay.style.display = "none";
+      }
+      const controlsInfo = document.getElementById("controls-info");
+      if (controlsInfo) {
+        controlsInfo.style.display = "none";
+      }
+    } else if (mode === "float") {
+      // Show UI elements in float mode
+      this.showUIForFloatMode();
+    }
+  }
+
+  showUIForFloatMode() {
+    // Show control panel, intro overlay, controls info, position info, and environment toggle in float mode
+    if (this.app.controlPanel?.panel) {
+      this.app.controlPanel.panel.style.display = "block";
+    }
+    if (this.app.introOverlay) {
+      this.app.introOverlay.style.display = "block";
+    }
+    const controlsInfo = document.getElementById("controls-info");
+    if (controlsInfo) {
+      controlsInfo.style.display = "block";
+    }
+    // Show position info (bottom right HUD)
+    const hudEl = document.querySelector('div[style*="bottom: 10px"][style*="right: 10px"]');
+    if (hudEl) {
+      hudEl.style.display = "block";
+    }
+    // Show environment toggle (terrain selector)
+    if (this.app.environmentToggle?.element) {
+      this.app.environmentToggle.element.style.display = "block";
+    }
+  }
+
+  hideUIForMainMenu() {
+    // Hide all UI elements for clean main menu
+    if (this.app.controlPanel?.panel) {
+      this.app.controlPanel.panel.style.display = "none";
+    }
+    if (this.app.introOverlay) {
+      this.app.introOverlay.style.display = "none";
+    }
+    const controlsInfo = document.getElementById("controls-info");
+    if (controlsInfo) {
+      controlsInfo.style.display = "none";
+    }
+    // Hide position info (bottom right HUD)
+    const hudEl = document.querySelector('div[style*="bottom: 10px"][style*="right: 10px"]');
+    if (hudEl) {
+      hudEl.style.display = "none";
+    }
+    // Hide environment toggle (terrain selector)
+    if (this.app.environmentToggle?.element) {
+      this.app.environmentToggle.element.style.display = "none";
+    }
+  }
+
+  // Pause camera rotation around plane
+  updatePauseCamera(deltaTime) {
+    if (!this.player || !this.player.mesh) return;
+
+    // Rotate camera around the plane
+    this.pauseCameraAngle += deltaTime * 0.5; // Slow rotation
+
+    const playerPosition = this.player.mesh.position;
+
+    // Calculate camera position in a circle around the plane
+    const x = playerPosition.x + Math.cos(this.pauseCameraAngle) * this.pauseCameraDistance;
+    const y = playerPosition.y + Math.sin(this.pauseCameraAngle) * this.pauseCameraDistance;
+    const z = playerPosition.z + this.pauseCameraHeight;
+
+    // Update camera position and look at the plane
+    this.camera.position.set(x, y, z);
+    this.camera.lookAt(playerPosition);
+  }
+
   // Cleanup
   dispose() {
     this.stopGame();
-    this.inputManager.dispose();
-
-    // Remove start screen
-    const startScreen = document.getElementById("start-screen");
-    if (startScreen) {
-      startScreen.remove();
+    if (this.inputManager) {
+      this.inputManager.dispose();
     }
+    this.uiManager.dispose();
 
     console.log("🗑️ Game disposed");
   }

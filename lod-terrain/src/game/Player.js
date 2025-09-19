@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { degToRad } from "three/src/math/MathUtils.js";
+import { sampleHeight } from "../noise.js";
 
 export class Player {
   constructor(scene, camera) {
@@ -9,7 +10,13 @@ export class Player {
     this.camera = camera;
     this.mesh = null;
     this.velocity = new THREE.Vector3();
-    this.position = new THREE.Vector3(0, 0, 100);
+    // Find a good spawn position with low terrain
+    const spawnPosition = this.findLowTerrainSpawn();
+    this.position = new THREE.Vector3(
+      spawnPosition.x,
+      spawnPosition.y,
+      spawnPosition.z
+    );
 
     // Balanced speeds for better control
     this.baseSpeed = 300; // Cruise/base speed (unchanging target)
@@ -47,6 +54,16 @@ export class Player {
     // Smooth camera system (Y is forward, Z is up)
     this.cameraPosition = new THREE.Vector3(0, -1900, 1500);
     this.cameraLookAt = new THREE.Vector3();
+    this.cameraRotation = new THREE.Quaternion(); // Smooth camera rotation
+
+    // Auto-descent configuration
+    this.autoDescentEnabled = true; // Enable/disable auto-descent
+    this.startAltitude = 800; // High starting altitude
+    this.targetAltitude = 200; // Lower target altitude
+    this.descentDuration = 10.0; // 10 seconds to descend
+    this.descentStartTime = null; // When descent begins
+    this.hasDescended = false; // Track if descent is complete
+    this.initialPosition = null; // Store initial position for descent calculation
 
     // Status
     this.health = 100;
@@ -58,7 +75,7 @@ export class Player {
 
     // Laser system
     this.lasers = [];
-    this.laserSpeed = 8000; // Very fast laser speed
+    this.laserSpeed = 2000; // Very fast laser speed
     this.lastLaserTime = 0;
     this.laserCooldown = 150; // 150ms between shots
 
@@ -87,6 +104,50 @@ export class Player {
     this._bombGlowMaterial = null;
 
     this.loadJetModel();
+  }
+
+  findLowTerrainSpawn() {
+    console.log("🗺️ Scanning terrain for low spawn point...");
+
+    let lowestHeight = Infinity;
+    let bestPosition = { x: 0, y: 0, z: 200 }; // Default fallback
+
+    // Scan a grid of positions to find the lowest terrain
+    const scanRange = 2000; // Scan 4000x4000 area
+    const scanStep = 100; // Check every 100 units
+    const minFlightHeight = this.autoDescentEnabled ? this.startAltitude : 50; // Use start altitude if auto-descent enabled
+
+    for (let x = -scanRange; x <= scanRange; x += scanStep) {
+      for (let y = -scanRange; y <= scanRange; y += scanStep) {
+        try {
+          const terrainHeight = sampleHeight(x, y);
+
+          if (terrainHeight < lowestHeight) {
+            lowestHeight = terrainHeight;
+            bestPosition = {
+              x: x,
+              y: y,
+              z: terrainHeight + minFlightHeight,
+            };
+          }
+        } catch (error) {
+          // Skip problematic positions
+          continue;
+        }
+      }
+    }
+
+    console.log(
+      `✅ Found spawn point at: (${bestPosition.x}, ${bestPosition.y}, ${bestPosition.z}), terrain height: ${lowestHeight}, altitude: ${minFlightHeight}`
+    );
+
+    // Store initial position for auto-descent
+    if (this.autoDescentEnabled) {
+      this.initialPosition = { ...bestPosition };
+      console.log(`🛫 Auto-descent enabled: Starting at ${this.startAltitude}m, will descend to ${this.targetAltitude}m over ${this.descentDuration}s`);
+    }
+
+    return bestPosition;
   }
 
   async loadJetModel() {
@@ -434,26 +495,26 @@ export class Player {
     if (!this.mesh) return;
 
     // Enhanced dynamic camera with speed compensation
-    const cameraDistance = 280 + this.forwardSpeed * 0.01; // Much further back
-    const cameraHeight = 20; // Lower height to be more behind than above
+    const cameraDistance = -20; // Very close to the plane
+    const cameraHeight = 10; // Lower height to be more behind than above
 
-    // Get plane's backward direction in world coordinates
-    // Use the velocity direction but reversed for camera position
-    this._tempVector1.copy(this.velocity).normalize().multiplyScalar(-1);
+    // Smooth camera rotation following with lag
+    const rotationFollowRate = 2.0; // Slower = more lag
+    const rotationAlpha = 1 - Math.exp(-rotationFollowRate * deltaTime);
+    this.cameraRotation.slerp(this.mesh.quaternion, rotationAlpha);
 
-    // Dynamic camera positioning - reuse temp vector
+    // Get plane's backward direction using smoothed rotation
+    this._tempVector1.set(0, -1, 0); // Backward direction (opposite of forward Y)
+    this._tempVector1.applyQuaternion(this.cameraRotation); // Apply smoothed rotation
+
+    // Dynamic camera positioning - account for plane's internal offset
     this._tempVector2.copy(this._tempVector1).multiplyScalar(cameraDistance);
     this._tempVector2.z += cameraHeight; // Z is up in this coordinate system
 
-    // Banking influence on camera - tilt slightly into the turn instead of moving up
-    // if (Math.abs(this.bankAngle) > 0.1) {
-    //   this._tempVector3.set(0, 1, 0); // Y direction due to our rotations
-    //   this._tempVector3.applyQuaternion(this.mesh.quaternion);
-    //   // Reduce the banking offset and keep it horizontal
-    //   this._tempVector3.multiplyScalar(Math.sin(this.bankAngle) * 15);
-    //   this._tempVector2.add(this._tempVector3);
-    //   // Don't add vertical offset during banking
-    // }
+    // Add offset to account for plane model position within group
+    const planeOffset = new THREE.Vector3(0, 0, 5); // Compensate for object.position.set(0, 0, -5)
+    planeOffset.applyQuaternion(this.cameraRotation);
+    this._tempVector2.add(planeOffset);
 
     // Calculate target camera position - reuse temp vector
     this._tempVector1.copy(this.mesh.position).add(this._tempVector2);
@@ -464,9 +525,9 @@ export class Player {
     this.cameraPosition.lerp(this._tempVector1, followAlpha);
     this.camera.position.copy(this.cameraPosition);
 
-    // Look ahead distance based on speed and turning - reuse temp vector
-    this._tempVector2.set(0, 1, 0); // Y is forward in world coordinates
-    // Don't apply quaternion - just look in world Y direction
+    // Look ahead in the direction using smoothed rotation - reuse temp vector
+    this._tempVector2.set(0, 1, 0); // Start with Y forward
+    this._tempVector2.applyQuaternion(this.cameraRotation); // Apply smoothed rotation
 
     const lookAheadDistance =
       600 + this.forwardSpeed * 0.3 + Math.abs(this.currentTurnRate) * 20;
@@ -625,8 +686,8 @@ export class Player {
 
     // Laser spawn positions (from wings)
     const laserPositions = [
-      new THREE.Vector3(-40, 20, -5), // Left wing (Y is forward, Z is up)
-      new THREE.Vector3(40, 20, -5), // Right wing (Y is forward, Z is up)
+      new THREE.Vector3(-8, 40, -5), // Left wing (Y is forward, Z is up)
+      new THREE.Vector3(8, 40, -5), // Right wing (Y is forward, Z is up)
     ];
 
     laserPositions.forEach((localPos) => {
@@ -639,21 +700,21 @@ export class Player {
   }
 
   createLaser(position, direction) {
-    const laserLength = 300; // Much longer lasers
+    const laserLength = 100; // Much longer lasers
 
     // Create shared geometries and materials only once
     if (!this._laserCoreGeometry) {
       this._laserCoreGeometry = new THREE.CylinderGeometry(
-        3,
-        3,
+        0.5,
+        0.5,
         laserLength,
-        8
+        3
       ); // Reduced segments from 80 to 8
       this._laserGlowGeometry = new THREE.CylinderGeometry(
-        5,
-        5,
+        3,
+        3,
         laserLength,
-        8
+        4
       );
 
       this._laserCoreMaterial = new THREE.MeshStandardMaterial({
@@ -661,7 +722,7 @@ export class Player {
         transparent: true,
         opacity: 1.0,
         emissive: 0x00ff00,
-        emissiveIntensity: 0.8,
+        emissiveIntensity: 8.0, // Much higher for intense laser bloom
         metalness: 0,
         roughness: 1,
       });
@@ -669,9 +730,9 @@ export class Player {
       this._laserGlowMaterial = new THREE.MeshStandardMaterial({
         color: 0x00ff00,
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.4,
         emissive: 0x00ff00,
-        emissiveIntensity: 4.2,
+        emissiveIntensity: 12.0, // Super bright for dramatic bloom effect
         blending: THREE.AdditiveBlending,
         metalness: 0,
         roughness: 1,
@@ -732,29 +793,74 @@ export class Player {
         continue;
       }
 
-      // Move laser forward
-      laser.position.add(laser.velocity.clone().multiplyScalar(deltaTime));
+      // Check terrain collision using CollisionDetector
+      const collision = this.collisionDetector.checkLaserTerrainCollision(
+        laser.position,
+        laser.velocity,
+        deltaTime
+      );
 
-      // Update laser and glow positions
-      laser.mesh.position.copy(laser.position);
-      laser.glow.position.copy(laser.position);
+      if (collision) {
+        console.log("🎯 Laser hit terrain!", collision.point);
 
-      // Check collision with enemies
-      if (window.game && window.game.enemyManager) {
-        console.log(`🔫 Checking laser collision at:`, laser.position);
-        const hits = window.game.enemyManager.damageEnemiesInArea(
-          laser.position,
-          150,
-          25
-        ); // Much larger radius
-        if (hits.length > 0) {
-          console.log(`🔫💥 Laser hit ${hits.length} enemies!`);
-          // Remove laser on hit
+        // Calculate reflection using CollisionDetector
+        const reflectedVelocity = this.collisionDetector.calculateReflection(
+          laser.velocity,
+          collision.normal,
+          0.8 // 80% energy retained
+        );
+
+        // Update laser properties
+        laser.velocity = reflectedVelocity;
+        laser.position.copy(collision.point);
+        laser.bounces = (laser.bounces || 0) + 1;
+
+        // Limit bounces to prevent infinite reflections
+        if (laser.bounces > 3) {
+          console.log("🔫💥 Laser expired after 3 bounces");
           this.scene.remove(laser.mesh);
           this.scene.remove(laser.glow);
           this.lasers.splice(i, 1);
           continue;
         }
+
+        // Debug: Turn laser orange when it hits terrain
+        laser.mesh.material.color.setHex(0xff6600); // Orange
+        laser.mesh.material.emissive.setHex(0xff6600);
+        laser.glow.material.color.setHex(0xff6600);
+        laser.glow.material.emissive.setHex(0xff6600);
+
+        // Add some visual effects for impact
+        laser.mesh.material.emissiveIntensity = Math.min(
+          15.0,
+          laser.mesh.material.emissiveIntensity * 1.2
+        );
+        laser.glow.material.emissiveIntensity = Math.min(
+          20.0,
+          laser.glow.material.emissiveIntensity * 1.2
+        );
+      } else {
+        // No collision, move normally
+        const velocityStep = laser.velocity.clone().multiplyScalar(deltaTime);
+        laser.position.add(velocityStep);
+      }
+
+      // Update laser and glow positions
+      laser.mesh.position.copy(laser.position);
+      laser.glow.position.copy(laser.position);
+
+      // Check collision with enemies using CollisionDetector
+      const enemyHits = this.collisionDetector.checkLaserEnemyCollision(
+        laser.position,
+        150
+      );
+      if (enemyHits.length > 0) {
+        console.log(`🔫💥 Laser hit ${enemyHits.length} enemies!`);
+        // Remove laser on hit
+        this.scene.remove(laser.mesh);
+        this.scene.remove(laser.glow);
+        this.lasers.splice(i, 1);
+        continue;
       } else {
         console.log(`🔫❌ No enemy manager found for collision check`);
       }
@@ -1169,5 +1275,20 @@ export class Player {
       position: this.mesh.position,
       distance: Math.max(0, progressDistance),
     };
+  }
+
+  dispose() {
+    // Dispose collision detector
+    if (this.collisionDetector) {
+      this.collisionDetector.dispose();
+      this.collisionDetector = null;
+    }
+
+    // Clean up other resources
+    if (this.mesh && this.scene) {
+      this.scene.remove(this.mesh);
+    }
+
+    console.log("🗑️ Player disposed");
   }
 }
