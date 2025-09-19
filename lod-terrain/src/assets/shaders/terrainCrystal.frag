@@ -75,10 +75,10 @@ float fbm(vec3 p) {
   float amplitude = 0.3;
   vec3 shift = vec3(37.1, 17.3, 29.7);
 
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 3; ++i) {
     value += amplitude * noise(p);
     p = p * 2.2 + shift;
-    amplitude *= 0.25;
+    amplitude *= 0.3;
   }
 
   return value;
@@ -99,8 +99,8 @@ vec3 prismPalette(vec3 worldPos) {
   vec3 accent = mix(c3, c4, smoothstep(0.2, 0.8, bandB));
   vec3 blend = mix(base, accent, bandC);
 
-  float sparkle = fbm(worldPos * 0.22 + vec3(8.2, -1.7, 3.4));
-  blend += vec3(1.35, 1.6, 1.9) * sparkle * 0.35;
+  float sparkle = noise(worldPos * 0.22 + vec3(8.2, -1.7, 3.4));
+  blend += vec3(1.35, 1.6, 1.9) * sparkle * 0.25;
 
   return blend;
 }
@@ -116,7 +116,7 @@ void main() {
   vec3 prism = prismPalette(vPosition);
   float facing = clamp(dot(refinedNormal, viewDir), 0.0, 1.0);
   float fresnel = pow(1.0 - facing, 2.5);
-  vec3 color = mix(prism * 0.4, prism, fresnel);
+  vec3 color = mix(prism * 0.3, prism * 0.8, fresnel); // Overall darker base
 
   float sunStrength = clamp(uSunIntensity, 0.0, 6.0) * shadowFactor;
   float diffuse = max(dot(refinedNormal, sunDir), 0.0);
@@ -128,10 +128,10 @@ void main() {
   vec3 halfVec = normalize(sunDir + viewDir);
   float specular = pow(max(dot(refinedNormal, halfVec), 0.0), 96.0);
   vec3 specTint = mix(vec3(1.2, 1.1, 1.4), sunTint, 0.65);
-  color += specTint * specular * uSpecularStrength * sunStrength * 2.4;
+  color += specTint * specular * uSpecularStrength * sunStrength * 5.4;
 
   float ambientTerm = max(dot(refinedNormal, normalize(uAmbientDirection)), 0.0);
-  color += uAmbientColor * ambientTerm * (uAmbientIntensity * 1.2);
+  color += uAmbientColor * ambientTerm * (uAmbientIntensity * 0.6) * (0.3 + 0.7 * shadowFactor); // Darker ambient, affected by shadows
 
   float skyFacing = clamp(refinedNormal.z, 0.0, 1.0);
   float tintMix = uSkyTintStrength * pow(skyFacing, 0.8);

@@ -87,7 +87,7 @@ export class Terrain extends THREE.Object3D {
     worldWidth = 1024,
     levels = 12,
     resolution = 128,
-    { enableShadows = false } = {}
+    { enableShadows = false, defaultShaderIndex = 6 } = {}
   ) {
     super();
 
@@ -96,7 +96,7 @@ export class Terrain extends THREE.Object3D {
     this.resolution = resolution;
     this.heightData = heightData;
     this.offset = new THREE.Vector3(0, 0, 0);
-    this.activeShaderIndex = 0; // Start with first shader
+    this.activeShaderIndex = defaultShaderIndex;
     this.fade = { start: 0, end: 0 };
     this.morphRegion = 0.3;
     this.sunDirection = new THREE.Vector3(0, 1, 0);

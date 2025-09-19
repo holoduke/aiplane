@@ -28,6 +28,9 @@ import { texture } from "./texture.js";
 import obeliskVert from "./assets/shaders/obelisk.vert?raw";
 import obeliskFrag from "./assets/shaders/obelisk.frag?raw";
 
+// Default terrain configuration
+const DEFAULT_TERRAIN_INDEX = 2; // Mars terrain
+
 import {
   computeSunDirection,
   sampleSkyColors,
@@ -39,6 +42,7 @@ import { createIntroOverlay } from "./ui/IntroOverlay.js";
 import { createControlPanel } from "./ui/ControlPanel.js";
 import { applyEnvironment } from "./environment.js";
 import { createEnvironmentToggle } from "./ui/EnvironmentToggle.js";
+import { Game } from "./game/Game.js";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 const SUN_COLOR_COOL = new THREE.Color(0.6, 0.75, 0.98);
@@ -143,6 +147,7 @@ class TerrainApp {
     this.applyAASettingsFn = null;
     this.renderPixelRatio = getRendererPixelRatio();
     this.environmentToggle = null;
+    this.game = null;
     this.postProcessingEnabled = true;
     this.handleComposerResize = null;
     this.lensFlare = null;
@@ -217,6 +222,7 @@ class TerrainApp {
     this.setupEnvironmentToggle();
     this.setupControlPanel();
     this.setupInputHandlers();
+    this.setupGame();
 
     this.applyShaderEnvironment(this.terrain.activeShaderIndex);
   }
@@ -248,7 +254,7 @@ class TerrainApp {
   createTerrain() {
     const previousShaderIndex = this.terrain
       ? this.terrain.activeShaderIndex
-      : 0;
+      : DEFAULT_TERRAIN_INDEX;
 
     if (this.terrain) {
       const materials = new Set();
@@ -273,7 +279,10 @@ class TerrainApp {
       8192,
       this.terrainLevels,
       this.terrainResolution,
-      { enableShadows: this.shadowsEnabled }
+      {
+        enableShadows: this.shadowsEnabled,
+        defaultShaderIndex: DEFAULT_TERRAIN_INDEX,
+      }
     );
     scene.add(this.terrain);
 
@@ -602,7 +611,11 @@ class TerrainApp {
     scene.add(obeliskGroup);
     this.debugObelisk = obeliskGroup;
 
-    console.log(`Obelisk created at position: (${obeliskX}, ${obeliskY}, ${finalZ.toFixed(2)})`);
+    console.log(
+      `Obelisk created at position: (${obeliskX}, ${obeliskY}, ${finalZ.toFixed(
+        2
+      )})`
+    );
     console.log(`Terrain height at obelisk: ${terrainHeight.toFixed(2)}`);
     console.log("Obelisk with spike added to scene");
 
@@ -1024,6 +1037,18 @@ class TerrainApp {
     });
   }
 
+  setupGame() {
+    this.game = new Game(this);
+
+    // Make the game globally accessible for Player.js integration
+    window.game = this.game;
+
+    // Show start screen
+    this.game.showStartScreen();
+
+    console.log('🎮 Game system integrated with TerrainApp');
+  }
+
   setupInputHandlers() {
     const pointerLockElement = renderer.domElement;
     pointerLockElement.tabIndex = 0;
@@ -1244,7 +1269,7 @@ class TerrainApp {
     container.addEventListener("contextmenu", (e) => e.preventDefault());
   }
 
-  applyShaderEnvironment(index = 0) {
+  applyShaderEnvironment(index = DEFAULT_TERRAIN_INDEX) {
     const { config } = applyEnvironment(this, index, { scene, material });
     this.updateSun();
     const label = config?.name || this.environmentName || "Environment";
@@ -1324,7 +1349,7 @@ class TerrainApp {
 
     // Update obelisk shader uniforms for all meshes in the group
     if (this.debugObelisk && this.debugObelisk.isGroup) {
-      this.debugObelisk.children.forEach(mesh => {
+      this.debugObelisk.children.forEach((mesh) => {
         if (mesh.material && mesh.material.uniforms) {
           const uniforms = mesh.material.uniforms;
 
@@ -1485,6 +1510,12 @@ class TerrainApp {
       this.sky2.updateMatrixWorld();
     }
 
+    // Update game system first
+    if (this.game) {
+      this.game.update(deltaTime);
+    }
+
+    // Then update camera matrix and view matrix AFTER game updates
     camera.updateMatrixWorld(true);
     this.viewMatrix.copy(camera.matrixWorldInverse);
     this.terrain?.updateViewMatrix(this.viewMatrix);

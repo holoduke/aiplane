@@ -56,7 +56,7 @@ void main() {
   rockColor = mix(rockColor, vec3(0.3, 0.25, 0.22), 0.35);
 
   float lavaLevel = 8.5;
-  float depthMask = smoothstep(lavaLevel + 2.0, lavaLevel - 14.0, height);
+  float depthMask = smoothstep(lavaLevel + 2.0, lavaLevel - 9.0, height);
   float slope = 1.0 - clamp(dot(normal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0);
   float slopeMask = pow(slope, 1.05);
 

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
+import { degToRad } from "three/src/math/MathUtils.js";
 
 export class Player {
   constructor(scene, camera) {
@@ -8,30 +9,30 @@ export class Player {
     this.camera = camera;
     this.mesh = null;
     this.velocity = new THREE.Vector3();
-    this.position = new THREE.Vector3(0, 850, -4000);
-    this.rotation = new THREE.Euler();
+    this.position = new THREE.Vector3(0, 0, 100);
 
     // Balanced speeds for better control
-    this.baseSpeed = 3000; // Cruise/base speed (unchanging target)
+    this.baseSpeed = 300; // Cruise/base speed (unchanging target)
     this.forwardSpeed = this.baseSpeed; // Current speed, starts at base
-    this.maxSpeed = 2000; // Maximum speed
+    this.maxSpeed = 200; // Maximum speed
     this.steerSpeed = 900; // Steering responsiveness
     this.maxSteerAngle = Math.PI / 3; // 60 degrees - higher turn angle
 
     // Enhanced flight dynamics with higher turn rates
     this.acceleration = 800; // How quickly speed changes
     this.currentTurnRate = 0; // Current turning rate
-    this.maxTurnRate = 9.5; // Much higher turning rate for agile turns
-    this.turnAcceleration = 60.0; // Faster turn acceleration for sharp turns
+    this.maxTurnRate = 39.5; // Much higher turning rate for agile turns
+    this.turnAcceleration = 460.0; // Faster turn acceleration for sharp turns
     this.turnDamping = 0.3; // Less damping for more responsive feel
     this.bankAngle = 0; // Current banking angle
-    this.maxBankAngle = Math.PI / 8; // 90 degrees max bank - full banking
+    this.maxBankAngle = Math.PI / 4; // 45 degrees max bank - more dramatic banking
     this.pitchAngle = 0; // Current pitch angle
     this.maxPitchAngle = Math.PI / 10; // 36 degrees max pitch - slightly higher
 
     // Turn angle limits
     this.maxTurnAngle = (360 * Math.PI) / 180; // 90 degrees max turn angle
     this.currentTurnAngle = 0; // Track current turn angle from center
+    this.worldZRotation = 0; // Track world Z-axis rotation
 
     // Advanced flight characteristics
     this.angularVelocity = new THREE.Vector3(); // For realistic rotation
@@ -39,14 +40,18 @@ export class Player {
     this.targetThrust = 1.0;
     this.afterburner = false;
 
-    // Smooth camera system
-    this.cameraPosition = new THREE.Vector3(0, 1500, -1900);
+    // Steering input state
+    this.steeringInput = 0; // -1 for left, 0 for none, 1 for right
+    this.targetYawRate = 0; // Target yaw rotation rate
+
+    // Smooth camera system (Y is forward, Z is up)
+    this.cameraPosition = new THREE.Vector3(0, -1900, 1500);
     this.cameraLookAt = new THREE.Vector3();
 
     // Status
     this.health = 100;
     this.distanceTraveled = 0;
-    this.startZ = -4000;
+    this.startY = 0; // Y is forward direction
 
     // Effects
     this.exhaustGlows = [];
@@ -86,9 +91,11 @@ export class Player {
 
   async loadJetModel() {
     try {
+      THREE.Object3D.DEFAULT_UP.set(0, 0, 1); // Z is up
+
       // First load the materials (.mtl file)
       const mtlLoader = new MTLLoader();
-      mtlLoader.setPath("/spaceship/");
+      mtlLoader.setPath("/assets/spaceship/");
 
       // Load materials first
       const materials = await new Promise((resolve, reject) => {
@@ -104,28 +111,44 @@ export class Player {
 
       // Then load the OBJ file with materials
       const objLoader = new OBJLoader();
-      objLoader.setPath("/spaceship/");
+      objLoader.setPath("/assets/spaceship/");
       objLoader.setMaterials(materials);
 
       const object = await new Promise((resolve, reject) => {
         objLoader.load(
-          "justigue league flying vehicle.obj",
+          "justigue_league_flying_vehicle.obj",
           resolve,
           undefined,
           reject
         );
       });
 
-      this.mesh = object;
+      // Create a group to control the rotation pivot point
+      const planeGroup = new THREE.Group();
 
       // Scale the spaceship appropriately
-      this.mesh.scale.setScalar(0.5); // OBJ models often need smaller scale
-      this.mesh.position.copy(this.position);
+      object.scale.setScalar(0.05); // OBJ models often need smaller scale
+
+      // Orient the plane correctly for our coordinate system (Z is up, Y is forward)
+      // Plane should point away from camera (forward) and be right-side up
+      object.rotation.set(Math.PI / 2, Math.PI, 0);
+
+      // Offset the plane within the group to move the rotation pivot
+      object.position.set(0, 0, -5); // Move plane down relative to group origin
+
+      // Add the plane to the group
+      planeGroup.add(object);
+
+      // Position the group in the world
+      planeGroup.position.copy(this.position);
+
+      // Use the group as our main mesh for rotation
+      this.mesh = planeGroup;
 
       // Enable shadows for all meshes in the model
       this.mesh.traverse((child) => {
         if (child.isMesh) {
-          child.castShadow = true;
+          child.castShadow = false;
           child.receiveShadow = true;
 
           // Enhance materials if needed
@@ -149,96 +172,22 @@ export class Player {
         "Failed to load OBJ spaceship model, trying without materials:",
         error
       );
-
-      // Fallback: try loading OBJ without materials
-      try {
-        const objLoader = new OBJLoader();
-        objLoader.setPath("/spaceship/");
-
-        const object = await new Promise((resolve, reject) => {
-          objLoader.load(
-            "justigue league flying vehicle.obj",
-            resolve,
-            undefined,
-            reject
-          );
-        });
-
-        this.mesh = object;
-        this.mesh.scale.setScalar(0.5);
-        this.mesh.position.copy(this.position);
-
-        // Apply basic material since MTL failed
-        const basicMaterial = new THREE.MeshStandardMaterial({
-          color: 0x2c3e50, // Dark blue-grey like modern fighter jets
-          metalness: 0.8,
-          roughness: 0.2,
-          emissive: 0x0a1425,
-          emissiveIntensity: 0.1,
-        });
-
-        this.mesh.traverse((child) => {
-          if (child.isMesh) {
-            child.material = basicMaterial;
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-
-        // Exhaust effects handled in main success path
-
-        this.scene.add(this.mesh);
-        console.log("🚀 Spaceship (OBJ only) loaded successfully");
-      } catch (objError) {
-        console.warn(
-          "Failed to load OBJ model entirely, using fallback:",
-          objError
-        );
-        this.createAdvancedJet(); // Final fallback to procedural model
-      }
     }
-  }
-
-  createAdvancedJet() {
-    console.warn("Fallback to procedural model - OBJ loading failed");
-    // This is now just a basic fallback when OBJ loading completely fails
-    const group = new THREE.Group();
-
-    const basicMaterial = new THREE.MeshStandardMaterial({
-      color: 0x2c3e50, // Dark blue-grey like modern fighter jets
-      metalness: 0.8,
-      roughness: 0.2,
-      emissive: 0x0a1425,
-      emissiveIntensity: 0.1,
-    });
-
-    // Simple fallback geometry
-    const fuselageGeometry = new THREE.CylinderGeometry(8, 16, 100, 12);
-    const fuselage = new THREE.Mesh(fuselageGeometry, basicMaterial);
-    fuselage.castShadow = true;
-    fuselage.receiveShadow = true;
-    fuselage.rotation.x = Math.PI / 2;
-    group.add(fuselage);
-
-    this.createAdvancedExhaustSystem();
-
-    this.mesh = group;
-    this.mesh.position.copy(this.position);
-    this.scene.add(this.mesh);
   }
 
   createAdvancedExhaustSystem() {
     // Simple exhaust glow effect using bright emissive geometry
+    // Positions relative to the plane object inside the group
     const exhaustPositions = [
-      new THREE.Vector3(-25, 120, -232), // Left engine exhaust
-      new THREE.Vector3(25, 120, -232), // Right engine exhaust
+      new THREE.Vector3(-20, 120, -250), // Left engine exhaust (behind plane, wider spacing)
+      new THREE.Vector3(20, 120, -250), // Right engine exhaust (behind plane, wider spacing)
     ];
 
     this.exhaustGlows = [];
 
     exhaustPositions.forEach((pos, index) => {
       // Main exhaust glow - bright emissive core (reduced segments for performance)
-      const coreGeometry = new THREE.ConeGeometry(8, 40, 6); // Reduced from 8 to 6 segments
+      const coreGeometry = new THREE.ConeGeometry(10, 50, 6); // Twice as big exhaust
       const coreMaterial = new THREE.MeshStandardMaterial({
         color: 0x00aaff,
         transparent: true,
@@ -250,10 +199,12 @@ export class Player {
       });
       const core = new THREE.Mesh(coreGeometry, coreMaterial);
       core.position.copy(pos);
-      core.rotation.x = -Math.PI / 2; // Point backwards (rotate 90 degrees)
+      //core.rotation.z = Math.PI; // Point backwards in new coordinate system
+      core.rotation.y = -Math.PI / 2; // Point backwards in new coordinate system
+      core.rotation.z = Math.PI / 2;
 
       // Outer glow halo (reduced segments for performance)
-      const haloGeometry = new THREE.ConeGeometry(12, 60, 6); // Reduced from 8 to 6 segments
+      const haloGeometry = new THREE.ConeGeometry(20, 100, 6); // Twice as big halo
       const haloMaterial = new THREE.MeshStandardMaterial({
         color: 0x0066cc,
         transparent: true,
@@ -266,13 +217,16 @@ export class Player {
       });
       const halo = new THREE.Mesh(haloGeometry, haloMaterial);
       halo.position.copy(pos);
-      halo.rotation.x = -Math.PI / 2; // Point backwards (rotate 90 degrees)
+      // halo.rotation.z = Math.PI / 2; // Point backwards in new coordinate system
+      halo.rotation.y = -Math.PI / 2; // Point backwards in new coordinate system
+      halo.rotation.z = Math.PI / 2;
 
       this.exhaustGlows.push({ core, halo });
 
-      if (this.mesh) {
-        this.mesh.add(core);
-        this.mesh.add(halo);
+      // Add exhaust to the plane object inside the group, not the group itself
+      if (this.mesh && this.mesh.children[0]) {
+        this.mesh.children[0].add(core);
+        this.mesh.children[0].add(halo);
       }
     });
   }
@@ -326,37 +280,76 @@ export class Player {
       Math.min(this.maxSpeed, this.forwardSpeed + accel)
     );
 
-    // Time-based angular damping
-    const angularDamping = Math.pow(0.95, frameEquivalentDt);
-    this.angularVelocity.multiplyScalar(angularDamping);
+    // Steering dynamics
+    if (this.steeringInput !== 0) {
+      // Add banking into turns for more realistic flight
+      const maxBankRate = 3.0; // How fast to bank into turns
+      const targetBank = this.steeringInput * this.maxBankAngle;
 
-    // Apply rotations incrementally
-    this.mesh.rotation.x += this.angularVelocity.x * deltaTime;
-    this.mesh.rotation.y += this.angularVelocity.y * deltaTime;
-    this.mesh.rotation.z += this.angularVelocity.z * deltaTime;
+      // Smoothly transition to target bank angle
+      this.bankAngle = THREE.MathUtils.lerp(
+        this.bankAngle,
+        targetBank,
+        maxBankRate * deltaTime
+      );
+      this.mesh.rotation.y = this.bankAngle;
+
+      // Add Z-axis turning based on banking angle (world Z-axis)
+      const maxTurnRate = 1.5; // Maximum turn rate in radians per second
+      const targetTurnRate = this.steeringInput * maxTurnRate;
+      this.currentTurnRate = THREE.MathUtils.lerp(
+        this.currentTurnRate,
+        targetTurnRate,
+        3.0 * deltaTime
+      );
+      // Update world Z rotation
+      this.worldZRotation += -this.currentTurnRate * deltaTime;
+
+      // Apply rotations in order: world Z first, then banking
+      this.mesh.rotation.set(0, this.bankAngle, 0);
+
+      const myAxis = new THREE.Vector3(0, 0, 1);
+      this.mesh.rotateOnWorldAxis(myAxis, this.worldZRotation);
+    } else {
+      console.log("auto stabilizing", this.mesh.rotation.y);
+      // No steering input - stabilize
+      this.targetYawRate = 0;
+
+      // Auto-level banking when not steering
+      const rollStabilizeRate = 4.0;
+      this.bankAngle = THREE.MathUtils.lerp(
+        this.bankAngle,
+        0,
+        rollStabilizeRate * deltaTime
+      );
+      // Auto-stabilize Z-axis turning (just stop turning, don't return to original heading)
+      const turnStabilizeRate = 3.0;
+      this.currentTurnRate = THREE.MathUtils.lerp(
+        this.currentTurnRate,
+        0,
+        turnStabilizeRate * deltaTime
+      );
+
+      // Apply rotations in order: banking first, then world Z rotation
+      this.mesh.rotation.set(0, this.bankAngle, 0);
+
+      const myAxis = new THREE.Vector3(0, 0, 1);
+      this.mesh.rotateOnWorldAxis(myAxis, this.worldZRotation);
+    }
+
+    // Calculate the forward direction vector based on current rotations
+    this.forwardDirection = new THREE.Vector3(0, 1, 0); // Start with world Y (forward)
+    this.forwardDirection.applyQuaternion(this.mesh.quaternion); // Apply current rotations
   }
 
   autoFlyForward(deltaTime) {
-    if (!this.mesh) return;
+    if (!this.mesh || !this.forwardDirection) return;
 
-    // Move in the direction the plane is facing - reuse temp vector
-    this._tempVector1.set(0, 0, 1);
-    this._tempVector1.applyQuaternion(this.mesh.quaternion);
-
-    // Set velocity to reflect actual direction and speed
-    this.velocity.copy(this._tempVector1).multiplyScalar(this.forwardSpeed);
-
-    // Calculate movement using temp vector
-    this._tempVector2
-      .copy(this._tempVector1)
+    // Move in the direction the plane is facing
+    const movement = this.forwardDirection
+      .clone()
       .multiplyScalar(this.forwardSpeed * deltaTime);
-
-    // Add simple side movement based on banking angle
-    const sideMovement = this.bankAngle * -200 * deltaTime; // Adjust 200 for sensitivity
-    this._tempVector2.x += sideMovement;
-
-    this.mesh.position.add(this._tempVector2);
-
+    this.mesh.position.add(movement);
     this.distanceTraveled += this.forwardSpeed * deltaTime;
   }
 
@@ -441,39 +434,39 @@ export class Player {
     if (!this.mesh) return;
 
     // Enhanced dynamic camera with speed compensation
-    const cameraDistance = 50 + this.forwardSpeed * 0.01; // Further back at high speeds
-    const cameraHeight = 400; // Fixed height - no more height changes during banking
+    const cameraDistance = 280 + this.forwardSpeed * 0.01; // Much further back
+    const cameraHeight = 20; // Lower height to be more behind than above
 
-    // Get plane's backward direction - reuse temp vector
-    this._tempVector1.set(0, 0, -1);
-    this._tempVector1.applyQuaternion(this.mesh.quaternion);
+    // Get plane's backward direction in world coordinates
+    // Use the velocity direction but reversed for camera position
+    this._tempVector1.copy(this.velocity).normalize().multiplyScalar(-1);
 
     // Dynamic camera positioning - reuse temp vector
     this._tempVector2.copy(this._tempVector1).multiplyScalar(cameraDistance);
-    this._tempVector2.y += cameraHeight;
+    this._tempVector2.z += cameraHeight; // Z is up in this coordinate system
 
     // Banking influence on camera - tilt slightly into the turn instead of moving up
-    if (Math.abs(this.bankAngle) > 0.1) {
-      this._tempVector3.set(1, 0, 0);
-      this._tempVector3.applyQuaternion(this.mesh.quaternion);
-      // Reduce the banking offset and keep it horizontal
-      this._tempVector3.multiplyScalar(Math.sin(this.bankAngle) * 150);
-      this._tempVector2.add(this._tempVector3);
-      // Don't add vertical offset during banking
-    }
+    // if (Math.abs(this.bankAngle) > 0.1) {
+    //   this._tempVector3.set(0, 1, 0); // Y direction due to our rotations
+    //   this._tempVector3.applyQuaternion(this.mesh.quaternion);
+    //   // Reduce the banking offset and keep it horizontal
+    //   this._tempVector3.multiplyScalar(Math.sin(this.bankAngle) * 15);
+    //   this._tempVector2.add(this._tempVector3);
+    //   // Don't add vertical offset during banking
+    // }
 
     // Calculate target camera position - reuse temp vector
     this._tempVector1.copy(this.mesh.position).add(this._tempVector2);
 
     // Smooth camera following (time-based alpha)
-    const followRate = 5;
+    const followRate = 3;
     const followAlpha = 1 - Math.exp(-followRate * deltaTime);
     this.cameraPosition.lerp(this._tempVector1, followAlpha);
     this.camera.position.copy(this.cameraPosition);
 
     // Look ahead distance based on speed and turning - reuse temp vector
-    this._tempVector2.set(0, 0, 1);
-    this._tempVector2.applyQuaternion(this.mesh.quaternion);
+    this._tempVector2.set(0, 1, 0); // Y is forward in world coordinates
+    // Don't apply quaternion - just look in world Y direction
 
     const lookAheadDistance =
       600 + this.forwardSpeed * 0.3 + Math.abs(this.currentTurnRate) * 20;
@@ -484,14 +477,14 @@ export class Player {
     // Add subtle camera banking - tilt the camera slightly into turns
     if (Math.abs(this.bankAngle) > 0.1) {
       const bankTilt = this.bankAngle * 9.15; // Subtle camera tilt (15% of plane's bank)
-      this.camera.rotation.z = THREE.MathUtils.lerp(
-        this.camera.rotation.z,
+      this.camera.rotation.y = THREE.MathUtils.lerp(
+        this.camera.rotation.y,
         bankTilt,
         deltaTime * 3
       );
     } else {
-      this.camera.rotation.z = THREE.MathUtils.lerp(
-        this.camera.rotation.z,
+      this.camera.rotation.y = THREE.MathUtils.lerp(
+        this.camera.rotation.y,
         0,
         deltaTime * 4
       );
@@ -504,92 +497,21 @@ export class Player {
     this.camera.lookAt(this.cameraLookAt);
   }
 
-  // Enhanced steering with proper flight dynamics
   steerRight(deltaTime) {
-    return;
-    // Check if we can turn left (haven't reached max left turn angle)
-    if (this.currentTurnAngle > -this.maxTurnAngle) {
-      this.currentTurnRate = Math.min(
-        this.maxTurnRate,
-        this.currentTurnRate + this.turnAcceleration * deltaTime
-      );
-
-      // Add angular velocity for realistic rotation
-      this.angularVelocity.y += this.currentTurnRate * deltaTime * 0.5;
-
-      // Update current turn angle (tracks actual plane heading)
-      const turnAmount = this.currentTurnRate * deltaTime;
-      this.currentTurnAngle = Math.max(
-        this.currentTurnAngle - turnAmount,
-        -this.maxTurnAngle
-      );
-
-      // Progressive banking
-      this.bankAngle = THREE.MathUtils.lerp(
-        this.bankAngle,
-        -this.maxBankAngle,
-        deltaTime * 4
-      );
-      this.mesh.rotation.z = this.bankAngle;
-    } else {
-      // At turn limit - level out the plane while button is held
-      this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, 0, deltaTime * 4);
-      this.mesh.rotation.z = this.bankAngle;
-
-      // Also reduce turn rate
-      this.currentTurnRate *= Math.pow(this.turnDamping, deltaTime * 60);
-    }
+    if (!this.mesh) return;
+    this.steeringInput = 1;
+    console.log("turning right");
   }
 
   steerLeft(deltaTime) {
-    // Check if we can turn right (haven't reached max right turn angle)
-    if (this.currentTurnAngle < this.maxTurnAngle) {
-      this.currentTurnRate = Math.min(
-        this.maxTurnRate,
-        this.currentTurnRate + this.turnAcceleration * deltaTime
-      );
-
-      this.angularVelocity.y -= this.currentTurnRate * deltaTime * 0.5;
-
-      // Update current turn angle (tracks actual plane heading)
-      const turnAmount = this.currentTurnRate * deltaTime;
-      this.currentTurnAngle = Math.min(
-        this.currentTurnAngle + turnAmount,
-        this.maxTurnAngle
-      );
-
-      this.bankAngle = THREE.MathUtils.lerp(
-        this.bankAngle,
-        this.maxBankAngle,
-        deltaTime * 4
-      );
-      this.mesh.rotation.z = this.bankAngle;
-    } else {
-      // At turn limit - level out the plane while button is held
-      this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, 0, deltaTime * 4);
-      this.mesh.rotation.z = this.bankAngle;
-
-      // Also reduce turn rate
-      this.currentTurnRate *= Math.pow(this.turnDamping, deltaTime * 60);
-    }
+    if (!this.mesh) return;
+    this.steeringInput = -1;
+    console.log("turning left");
   }
 
   stabilize(deltaTime) {
-    // Gradual stabilization
-    const frameEquivalentDt = deltaTime * 60;
-    const turnDampingFactor = Math.pow(this.turnDamping, frameEquivalentDt);
-    this.currentTurnRate *= turnDampingFactor;
-
-    // DON'T reset turn angle - it tracks actual plane heading
-    // The plane maintains its current direction when controls are released
-
-    // Return to level flight (banking only)
-    this.bankAngle = THREE.MathUtils.lerp(this.bankAngle, 0, deltaTime * 3);
-    this.mesh.rotation.z = this.bankAngle;
-
-    // Pitch stabilization
-    this.pitchAngle = THREE.MathUtils.lerp(this.pitchAngle, 0, deltaTime * 2.5);
-    this.mesh.rotation.x = this.pitchAngle;
+    this.steeringInput = 0;
+    console.log("stabilize");
   }
 
   // Afterburner control
@@ -608,11 +530,11 @@ export class Player {
     this.lastBombTime = currentTime;
 
     // Get plane's forward direction - reuse temp vector
-    this._tempVector1.set(0, 0, 1);
+    this._tempVector1.set(0, 1, 0); // Y is forward in this coordinate system
     this._tempVector1.applyQuaternion(this.mesh.quaternion);
 
     // Bomb spawn position (center front of plane)
-    const bombPosition = new THREE.Vector3(0, 0, 40); // Front center
+    const bombPosition = new THREE.Vector3(0, 40, 0); // Front center (Y is forward)
 
     // Transform local position to world position - reuse temp vector
     this._tempVector2.copy(bombPosition);
@@ -698,13 +620,13 @@ export class Player {
     this.lastLaserTime = currentTime;
 
     // Get plane's forward direction - reuse temp vector
-    this._tempVector1.set(0, 0, 1);
+    this._tempVector1.set(0, 1, 0); // Y is forward in this coordinate system
     this._tempVector1.applyQuaternion(this.mesh.quaternion);
 
     // Laser spawn positions (from wings)
     const laserPositions = [
-      new THREE.Vector3(-40, -5, 20), // Left wing
-      new THREE.Vector3(40, -5, 20), // Right wing
+      new THREE.Vector3(-40, 20, -5), // Left wing (Y is forward, Z is up)
+      new THREE.Vector3(40, 20, -5), // Right wing (Y is forward, Z is up)
     ];
 
     laserPositions.forEach((localPos) => {
@@ -1238,11 +1160,11 @@ export class Player {
 
   getStats() {
     const progressDistance = Math.round(
-      (this.mesh.position.z - this.startZ) / 1000
+      (this.mesh.position.y - this.startY) / 1000
     );
     return {
       speed: Math.round(this.forwardSpeed * 3.6), // Convert m/s to km/h
-      altitude: Math.round(this.mesh.position.y),
+      altitude: Math.round(this.mesh.position.z), // Z is up in this coordinate system
       health: this.health,
       position: this.mesh.position,
       distance: Math.max(0, progressDistance),

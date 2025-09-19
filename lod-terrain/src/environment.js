@@ -145,8 +145,8 @@ export const ENVIRONMENTS = {
     horizon: 0xc66b2a,
     skyColor: 0x6b3518,
     fogColor: 0xa85428,
-    fogNearScale: 0.4,
-    fogFarScale: 1.2,
+    fogNearScale: 0.6,
+    fogFarScale: 0.85,
     skyKeyframes: SKY_PRESETS.mars,
   },
 };
