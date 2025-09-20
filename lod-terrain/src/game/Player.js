@@ -794,60 +794,67 @@ export class Player {
         continue;
       }
 
-      // Check terrain collision using CollisionDetector
-      let collision = null;
-      if (this.collisionDetector) {
-        collision = this.collisionDetector.checkLaserTerrainCollision(
-          laser.position,
-          laser.velocity,
-        deltaTime
-        );
-      }
-
-      if (collision) {
-        console.log("🎯 Laser hit terrain!", collision.point);
-
-        // Calculate reflection using CollisionDetector
-        const reflectedVelocity = this.collisionDetector.calculateReflection(
-          laser.velocity,
-          collision.normal,
-          0.8 // 80% energy retained
-        );
-
-        // Update laser properties
-        laser.velocity = reflectedVelocity;
-        laser.position.copy(collision.point);
-        laser.bounces = (laser.bounces || 0) + 1;
-
-        // Limit bounces to prevent infinite reflections
-        if (laser.bounces > 3) {
-          console.log("🔫💥 Laser expired after 3 bounces");
-          this.scene.remove(laser.mesh);
-          this.scene.remove(laser.glow);
-          this.lasers.splice(i, 1);
-          continue;
+      if (laser.justBounced) {
+        laser.justBounced = false;
+      } else {
+        // Check terrain collision using CollisionDetector
+        let collision = null;
+        if (this.collisionDetector) {
+          collision = this.collisionDetector.checkLaserTerrainCollision(
+            laser.position,
+            laser.velocity,
+            deltaTime
+          );
         }
 
-        // Debug: Turn laser orange when it hits terrain
-        laser.mesh.material.color.setHex(0xff6600); // Orange
-        laser.mesh.material.emissive.setHex(0xff6600);
-        laser.glow.material.color.setHex(0xff6600);
-        laser.glow.material.emissive.setHex(0xff6600);
+        if (collision) {
+          console.log("🎯 Laser hit terrain!", collision.point);
 
-        // Add some visual effects for impact
-        laser.mesh.material.emissiveIntensity = Math.min(
-          15.0,
-          laser.mesh.material.emissiveIntensity * 1.2
-        );
-        laser.glow.material.emissiveIntensity = Math.min(
-          20.0,
-          laser.glow.material.emissiveIntensity * 1.2
-        );
-      } else {
-        // No collision, move normally
-        const velocityStep = laser.velocity.clone().multiplyScalar(deltaTime);
-        laser.position.add(velocityStep);
+          // New bounce logic: always up with slight variation
+          const upVector = new THREE.Vector3(0, 0, 1);
+          const randomVector = new THREE.Vector3(
+              (Math.random() - 0.5) * 0.5, // x variation
+              (Math.random() - 0.5) * 0.5, // y variation
+              0
+          );
+          const bounceDirection = upVector.add(randomVector).normalize();
+          const bounceSpeed = laser.velocity.length() * 0.8; // 80% energy retained
+          const newVelocity = bounceDirection.multiplyScalar(bounceSpeed);
+
+          // Update laser properties
+          laser.velocity = newVelocity;
+          laser.position.copy(collision.point);
+          // Move the laser slightly away from the surface to avoid immediate re-collision
+          laser.position.addScaledVector(newVelocity.clone().normalize(), 5.0);
+          laser.bounces = (laser.bounces || 0) + 1;
+          laser.justBounced = true;
+
+          // Limit bounces to prevent infinite reflections
+          if (laser.bounces > 3) {
+            console.log("🔫💥 Laser expired after 3 bounces");
+            this.scene.remove(laser.mesh);
+            this.scene.remove(laser.glow);
+            this.lasers.splice(i, 1);
+            continue;
+          }
+
+          // The laser color no longer changes on bounce to avoid material issues.
+
+          // Add some visual effects for impact
+          laser.mesh.material.emissiveIntensity = Math.min(
+            15.0,
+            laser.mesh.material.emissiveIntensity * 1.2
+          );
+          laser.glow.material.emissiveIntensity = Math.min(
+            20.0,
+            laser.glow.material.emissiveIntensity * 1.2
+          );
+        }
       }
+      
+      // Move normally
+      const velocityStep = laser.velocity.clone().multiplyScalar(deltaTime);
+      laser.position.add(velocityStep);
 
       // Update laser and glow positions
       laser.mesh.position.copy(laser.position);

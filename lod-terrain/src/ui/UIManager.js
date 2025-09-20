@@ -20,6 +20,7 @@ export class UIManager {
     if (startScreen) {
       startScreen.style.display = "flex";
     }
+    document.exitPointerLock();
   }
 
   hideStartScreen() {
@@ -230,7 +231,7 @@ export class UIManager {
           0 0 20px ${primaryColor},
           inset 0 0 20px rgba(255, 255, 255, 0.3)
         `;
-        button.style.background = 'rgba(0, 255, 0, 0.1)';
+        button.style.background = "rgba(0, 255, 0, 0.1)";
         bgEffect.style.left = "100%";
       });
 
@@ -240,7 +241,7 @@ export class UIManager {
           0 0 10px ${primaryColor},
           inset 0 0 10px rgba(255, 255, 255, 0.2)
         `;
-        button.style.background = 'transparent';
+        button.style.background = "transparent";
         bgEffect.style.left = "-100%";
       });
 
@@ -471,7 +472,7 @@ export class UIManager {
       "COMMUNICATION ARRAY: OPERATIONAL",
       "STEALTH MODE: AVAILABLE",
       "MISSILE GUIDANCE: UPDATED",
-      "AWAITING PILOT INPUT..."
+      "AWAITING PILOT INPUT...",
     ];
 
     this.currentMessageIndex = 0;
@@ -534,7 +535,11 @@ export class UIManager {
 
   setupPauseListeners() {
     this.onPauseKeyDown = (event) => {
-      if (event.code === 'Space' || event.code === 'Enter' || event.code === 'NumpadEnter') {
+      if (
+        event.code === "Space" ||
+        event.code === "Enter" ||
+        event.code === "NumpadEnter"
+      ) {
         this.game.pauseGame(); // Unpause the game
         event.preventDefault();
       }
@@ -544,17 +549,17 @@ export class UIManager {
       this.game.pauseGame(); // Unpause the game
     };
 
-    document.addEventListener('keydown', this.onPauseKeyDown);
-    document.addEventListener('click', this.onPauseClick);
+    document.addEventListener("keydown", this.onPauseKeyDown);
+    document.addEventListener("click", this.onPauseClick);
   }
 
   removePauseListeners() {
     if (this.onPauseKeyDown) {
-      document.removeEventListener('keydown', this.onPauseKeyDown);
+      document.removeEventListener("keydown", this.onPauseKeyDown);
       this.onPauseKeyDown = null;
     }
     if (this.onPauseClick) {
-      document.removeEventListener('click', this.onPauseClick);
+      document.removeEventListener("click", this.onPauseClick);
       this.onPauseClick = null;
     }
   }
@@ -592,7 +597,8 @@ export class UIManager {
       } else {
         // Message complete, wait then move to next
         this.messageTimeout = setTimeout(() => {
-          this.currentMessageIndex = (this.currentMessageIndex + 1) % this.systemMessages.length;
+          this.currentMessageIndex =
+            (this.currentMessageIndex + 1) % this.systemMessages.length;
           this.typeCurrentMessage();
         }, 1500); // Wait 1.5s before next message
       }
