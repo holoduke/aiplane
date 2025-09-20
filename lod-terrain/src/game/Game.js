@@ -91,7 +91,7 @@ export class Game {
     console.log("🎮 Initializing play mode...");
 
     // Create player
-    this.player = new Player(this.scene, this.camera);
+    this.player = new Player(this.scene, this.camera, this.collisionDetector);
 
     // Create input manager with player reference
     this.inputManager = new InputManager(this.player);
@@ -233,11 +233,6 @@ export class Game {
       this.player.update(deltaTime);
     }
 
-    // Handle laser collision detection centrally
-    if (this.player && this.player.lasers && this.gameMode === "play") {
-      this.handleLaserCollisions(deltaTime);
-    }
-
     // Update other game systems
     if (this.enemyManager) {
       this.enemyManager.update(deltaTime);
@@ -292,66 +287,7 @@ export class Game {
     }
   }
 
-  handleLaserCollisions(deltaTime) {
-    if (!this.player || !this.player.lasers) return;
 
-    for (let i = this.player.lasers.length - 1; i >= 0; i--) {
-      const laser = this.player.lasers[i];
-
-      // Check terrain collision
-      const terrainCollision = this.collisionDetector.checkLaserTerrainCollision(
-        laser.position,
-        laser.velocity,
-        deltaTime
-      );
-
-      if (terrainCollision) {
-        console.log('🎯 Game: Laser hit terrain!', terrainCollision.point);
-
-        // Calculate reflection
-        const reflectedVelocity = this.collisionDetector.calculateReflection(
-          laser.velocity,
-          terrainCollision.normal,
-          0.8 // 80% energy retained
-        );
-
-        // Update laser properties
-        laser.velocity = reflectedVelocity;
-        laser.position.copy(terrainCollision.point);
-        laser.bounces = (laser.bounces || 0) + 1;
-
-        // Limit bounces to prevent infinite reflections
-        if (laser.bounces > 3) {
-          console.log('🔫💥 Game: Laser expired after 3 bounces');
-          this.scene.remove(laser.mesh);
-          this.scene.remove(laser.glow);
-          this.player.lasers.splice(i, 1);
-          continue;
-        }
-
-        // Debug: Turn laser orange when it hits terrain
-        laser.mesh.material.color.setHex(0xff6600); // Orange
-        laser.mesh.material.emissive.setHex(0xff6600);
-        laser.glow.material.color.setHex(0xff6600);
-        laser.glow.material.emissive.setHex(0xff6600);
-
-        // Add some visual effects for impact
-        laser.mesh.material.emissiveIntensity = Math.min(15.0, laser.mesh.material.emissiveIntensity * 1.2);
-        laser.glow.material.emissiveIntensity = Math.min(20.0, laser.glow.material.emissiveIntensity * 1.2);
-      }
-
-      // Check enemy collision
-      const enemyHits = this.collisionDetector.checkLaserEnemyCollision(laser.position, 150);
-      if (enemyHits.length > 0) {
-        console.log(`🔫💥 Game: Laser hit ${enemyHits.length} enemies!`);
-        // Remove laser on hit
-        this.scene.remove(laser.mesh);
-        this.scene.remove(laser.glow);
-        this.player.lasers.splice(i, 1);
-        continue;
-      }
-    }
-  }
 
 
   // Game state getters

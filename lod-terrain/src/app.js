@@ -43,6 +43,7 @@ import { createControlPanel } from "./ui/ControlPanel.js";
 import { applyEnvironment } from "./environment.js";
 import { createEnvironmentToggle } from "./ui/EnvironmentToggle.js";
 import { Game } from "./game/Game.js";
+import { AudioManager } from "./audio/AudioManager.js";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 const SUN_COLOR_COOL = new THREE.Color(0.6, 0.75, 0.98);
@@ -148,6 +149,7 @@ class TerrainApp {
     this.renderPixelRatio = getRendererPixelRatio();
     this.environmentToggle = null;
     this.game = null;
+    this.audioManager = null;
     this.postProcessingEnabled = true;
     this.handleComposerResize = null;
     this.lensFlare = null;
@@ -190,6 +192,7 @@ class TerrainApp {
   init() {
     this.setupStats();
     this.setupHud();
+    this.setupAudio();
 
     const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     this.terrainResolution = isMobile ? 96 : 192;
@@ -249,6 +252,12 @@ class TerrainApp {
     _hudEl.style.lineHeight = "1.4";
     _hudEl.style.pointerEvents = "none";
     container.appendChild(_hudEl);
+  }
+
+  setupAudio() {
+    this.audioManager = new AudioManager();
+    this.audioManager.registerAudio('menu-music', '/src/assets/audio/SkylineShowdown.mp3', { type: 'music', loop: true });
+    this.audioManager.registerAudio('game-music', '/src/assets/audio/level1.mp3', { type: 'music', loop: true });
   }
 
   createTerrain() {
@@ -1045,6 +1054,7 @@ class TerrainApp {
 
     // Show start screen and hide control panel initially
     this.game.uiManager.showStartScreen();
+    this.audioManager.transitionToMainMenu();
 
     // Hide control panel, controls info, position info, and environment toggle in main menu
     if (this.controlPanel?.panel) {

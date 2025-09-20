@@ -59,6 +59,15 @@ export const SKY_PRESETS = {
     { time: 19.5, horizon: 0x410705, sky: 0x130303, intensity: 0.1 },
     { time: 24.0, horizon: 0x200303, sky: 0x080101, intensity: 0.05 },
   ],
+  orange: [
+    { time: 0, horizon: 0xff4500, sky: 0xffa500, intensity: 0.05 },
+    { time: 5.5, horizon: 0xff6347, sky: 0xff8c00, intensity: 0.12 },
+    { time: 7.0, horizon: 0xff7f50, sky: 0xffa07a, intensity: 0.25 },
+    { time: 12.0, horizon: 0xff7f50, sky: 0xff8c00, intensity: 0.4 },
+    { time: 17.5, horizon: 0xff7f50, sky: 0xffa07a, intensity: 0.22 },
+    { time: 19.5, horizon: 0xff6347, sky: 0xff8c00, intensity: 0.1 },
+    { time: 24.0, horizon: 0xff4500, sky: 0xffa500, intensity: 0.05 },
+  ],
   mars: [
     { time: 0, horizon: 0x2b1508, sky: 0x5c2a0f, intensity: 0.08 },
     { time: 5.5, horizon: 0x5c2a0f, sky: 0x5c2a0f, intensity: 0.15 },
@@ -103,7 +112,7 @@ export const ENVIRONMENTS = {
   },
   Toon: {
     name: "Toon",
-    skyMode: "classic",
+    skyMode: "orange",
     fogColor: 0x8fb5ff,
     fogNearScale: 0.85,
     fogFarScale: 0.95,

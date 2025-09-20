@@ -161,9 +161,9 @@ export class UIManager {
       left: 50%;
       transform: translateX(-50%);
       font-size: 1rem;
-      color: #ffff00;
+      color: #00ff00;
       animation: pulse 1.5s infinite;
-      text-shadow: 0 0 5px #ffff00;
+      text-shadow: 0 0 5px #00ff00;
     `;
 
     // Button container with arcade styling
@@ -192,8 +192,8 @@ export class UIManager {
         font-size: 1.8rem;
         font-weight: 900;
         font-family: 'Courier New', monospace;
-        background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor});
-        color: #000;
+        background: transparent;
+        color: ${primaryColor};
         border: 3px solid ${primaryColor};
         border-radius: 12px;
         cursor: pointer;
@@ -202,11 +202,12 @@ export class UIManager {
         position: relative;
         overflow: hidden;
         transition: all 0.3s ease;
-        min-width: 280px;
-        text-shadow: none;
+        width: 500px;
+        white-space: nowrap;
+        text-shadow: 0 0 5px ${primaryColor};
         box-shadow:
-          0 0 20px ${primaryColor},
-          inset 0 0 20px rgba(255, 255, 255, 0.2);
+          0 0 10px ${primaryColor},
+          inset 0 0 10px rgba(255, 255, 255, 0.2);
       `;
 
       // Animated background effect
@@ -217,7 +218,7 @@ export class UIManager {
         left: -100%;
         width: 100%;
         height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+        background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.2), transparent);
         transition: left 0.5s ease;
         z-index: 1;
       `;
@@ -226,18 +227,20 @@ export class UIManager {
       button.addEventListener("mouseenter", () => {
         button.style.transform = "scale(1.05) translateY(-5px)";
         button.style.boxShadow = `
-          0 10px 30px ${primaryColor},
-          inset 0 0 30px rgba(255, 255, 255, 0.3)
+          0 0 20px ${primaryColor},
+          inset 0 0 20px rgba(255, 255, 255, 0.3)
         `;
+        button.style.background = 'rgba(0, 255, 0, 0.1)';
         bgEffect.style.left = "100%";
       });
 
       button.addEventListener("mouseleave", () => {
         button.style.transform = "scale(1) translateY(0)";
         button.style.boxShadow = `
-          0 0 20px ${primaryColor},
-          inset 0 0 20px rgba(255, 255, 255, 0.2)
+          0 0 10px ${primaryColor},
+          inset 0 0 10px rgba(255, 255, 255, 0.2)
         `;
+        button.style.background = 'transparent';
         bgEffect.style.left = "-100%";
       });
 
@@ -247,40 +250,17 @@ export class UIManager {
 
     const playButton = createArcadeButton(
       ">>> ENGAGE <<<",
-      "#ff0066",
-      "#ff6600",
+      "#00ff00",
+      "#008000",
       () => this.game.startGame("play")
     );
 
     const floatButton = createArcadeButton(
       ">>> EXPLORE <<<",
-      "#00ffff",
-      "#0066ff",
+      "#00ff00",
+      "#008000",
       () => this.game.startGame("float")
     );
-
-    // Controls display
-    const controls = document.createElement("div");
-    controls.style.cssText = `
-      margin-top: 2rem;
-      padding: 1rem 2rem;
-      background: rgba(0, 0, 0, 0.7);
-      border: 2px solid #00ff00;
-      border-radius: 10px;
-      text-align: center;
-      font-size: 0.9rem;
-      color: #00ff00;
-      text-shadow: 0 0 5px #00ff00;
-      max-width: 500px;
-    `;
-
-    controls.innerHTML = `
-      <div style="color: #ffff00; font-weight: bold; margin-bottom: 0.5rem;">FLIGHT CONTROLS</div>
-      <div>A/D or ← → : BANK & TURN</div>
-      <div>SPACE : FIRE LASERS</div>
-      <div>B : DROP BOMBS</div>
-      <div>SHIFT : AFTERBURNER</div>
-    `;
 
     // Add CSS animations
     const style = document.createElement("style");
@@ -332,8 +312,49 @@ export class UIManager {
     buttonContainer.appendChild(playButton);
     buttonContainer.appendChild(floatButton);
     startScreen.appendChild(buttonContainer);
-    startScreen.appendChild(controls);
     startScreen.appendChild(insertCoin);
+
+    const muteButton = document.createElement("div");
+    muteButton.id = "mute-button";
+    muteButton.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 40px;
+      height: 40px;
+      background-color: rgba(0, 255, 0, 0.2);
+      border: 2px solid #00ff00;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1001;
+    `;
+    const speakerIcon = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00ff00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+      </svg>
+    `;
+    const mutedIcon = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00ff00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <line x1="23" y1="1" x2="1" y2="23"></line>
+      </svg>
+    `;
+    muteButton.innerHTML = speakerIcon;
+
+    muteButton.addEventListener("click", () => {
+      const isPlaying = this.game.app.audioManager.toggleMusic();
+      if (isPlaying) {
+        muteButton.innerHTML = speakerIcon;
+      } else {
+        muteButton.innerHTML = mutedIcon;
+      }
+    });
+
+    startScreen.appendChild(muteButton);
 
     document.body.appendChild(startScreen);
 

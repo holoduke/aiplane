@@ -7,23 +7,25 @@ export class CollisionDetector {
     this.terrainMesh = null;
     this.raycaster = new THREE.Raycaster();
 
-    // Find and cache the terrain mesh for performance
-    this.findTerrainMesh();
-
     console.log("🎯 Collision detector initialized");
   }
 
-  findTerrainMesh() {
-    if (!this.scene || !this.scene.children) return;
+  findTerrainMesh = () => {
+    if (!this.scene) return;
 
-    // Look for the terrain mesh (large geometry with many vertices)
-    this.terrainMesh = this.scene.children.find(child =>
-      child.isMesh &&
-      child.geometry &&
-      child.geometry.getAttribute &&
-      child.geometry.getAttribute('position') &&
-      child.geometry.getAttribute('position').count > 10000 // Likely terrain mesh
-    );
+    let foundMesh = null;
+    this.scene.traverse((child) => {
+      if (foundMesh) return; // Already found one
+      if (child.isMesh &&
+          child.geometry &&
+          child.geometry.getAttribute &&
+          child.geometry.getAttribute('position') &&
+          child.geometry.getAttribute('position').count > 9000) { // Lowered threshold
+        foundMesh = child;
+      }
+    });
+
+    this.terrainMesh = foundMesh;
 
     if (this.terrainMesh) {
       console.log("🗺️ Terrain mesh found for collision detection", this.terrainMesh);
@@ -32,53 +34,76 @@ export class CollisionDetector {
     }
   }
 
-  /**
-   * Check if a laser will collide with terrain on its next move
-   * Uses heightmap sampling instead of mesh raycasting for shader-displaced terrain
-   * @param {THREE.Vector3} currentPosition - Current laser position
-   * @param {THREE.Vector3} velocity - Laser velocity vector
-   * @param {number} deltaTime - Time step
-   * @returns {Object|null} - Collision data or null if no collision
-   */
-  checkLaserTerrainCollision(currentPosition, velocity, deltaTime) {
-    // Calculate the movement step
-    const velocityStep = velocity.clone().multiplyScalar(deltaTime);
-    const nextPosition = currentPosition.clone().add(velocityStep);
+  checkLaserTerrainCollision = (currentPosition, velocity, deltaTime) => {
+    const direction = velocity.clone().normalize();
+    const totalDistance = velocity.length() * deltaTime;
+    const stepSize = 5;
+    const backwardSteps = 3;
 
-    // Sample terrain height at next position using heightmap
-    try {
-      const terrainHeight = sampleHeight(nextPosition.x, nextPosition.y);
+    const testPoint = new THREE.Vector3();
 
-      // Check if laser will be below terrain surface
-      if (nextPosition.z <= terrainHeight) {
-        // Calculate hit point by interpolating between current and next position
-        const hitPoint = this.interpolateTerrainHit(currentPosition, nextPosition, terrainHeight);
+    console.log(`[Collision] Checking laser at ${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)}, ${currentPosition.z.toFixed(2)}`);
 
-        // Calculate approximate surface normal using nearby height samples
-        const normal = this.calculateTerrainNormal(hitPoint.x, hitPoint.y);
+    // Start from a few steps back to check for ghost collisions
+    let traveledDistance = -backwardSteps * stepSize;
 
-        return {
-          hit: true,
-          point: hitPoint,
-          normal: normal,
-          distance: currentPosition.distanceTo(hitPoint),
-          terrainHeight: terrainHeight
-        };
-      }
-    } catch (error) {
-      console.warn("Error sampling terrain height:", error);
+    while (traveledDistance < totalDistance) {
+        testPoint.copy(currentPosition).addScaledVector(direction, traveledDistance);
+
+        try {
+            const terrainHeight = sampleHeight(testPoint.x, testPoint.y);
+            console.log(`[Collision] Step: dist=${traveledDistance.toFixed(2)}, testPoint=(${testPoint.x.toFixed(2)}, ${testPoint.y.toFixed(2)}, ${testPoint.z.toFixed(2)}), terrainHeight=${terrainHeight.toFixed(2)}`);
+
+            if (testPoint.z <= terrainHeight) {
+                console.log(`[Collision] HIT!`);
+                // Collision detected
+                const hitPoint = testPoint;
+                hitPoint.z = terrainHeight;
+
+                const normal = this.calculateTerrainNormal(hitPoint.x, hitPoint.y);
+
+                return {
+                    hit: true,
+                    point: hitPoint,
+                    normal: normal,
+                    distance: currentPosition.distanceTo(hitPoint),
+                    terrainHeight: terrainHeight
+                };
+            }
+        } catch (error) {
+            console.error("[Collision] Error sampling height:", error);
+        }
+
+        traveledDistance += stepSize;
     }
 
-    return null;
+    // Also check the final destination point
+    testPoint.copy(currentPosition).addScaledVector(direction, totalDistance);
+    try {
+        const terrainHeight = sampleHeight(testPoint.x, testPoint.y);
+        console.log(`[Collision] Final Step: dist=${totalDistance.toFixed(2)}, testPoint=(${testPoint.x.toFixed(2)}, ${testPoint.y.toFixed(2)}, ${testPoint.z.toFixed(2)}), terrainHeight=${terrainHeight.toFixed(2)}`);
+        if (testPoint.z <= terrainHeight) {
+            console.log(`[Collision] HIT!`);
+            const hitPoint = testPoint;
+            hitPoint.z = terrainHeight;
+            const normal = this.calculateTerrainNormal(hitPoint.x, hitPoint.y);
+            return {
+                hit: true,
+                point: hitPoint,
+                normal: normal,
+                distance: currentPosition.distanceTo(hitPoint),
+                terrainHeight: terrainHeight
+            };
+        }
+    } catch (error) {
+        console.error("[Collision] Error sampling height at final step:", error);
+        return null;
+    }
+
+    return null; // No collision
   }
 
-  /**
-   * Calculate terrain surface normal at a point using finite differences
-   * @param {number} x - X coordinate
-   * @param {number} y - Y coordinate
-   * @returns {THREE.Vector3} - Surface normal
-   */
-  calculateTerrainNormal(x, y) {
+  calculateTerrainNormal = (x, y) => {
     const delta = 5; // Sample distance for normal calculation
 
     try {
@@ -103,61 +128,7 @@ export class CollisionDetector {
     }
   }
 
-  /**
-   * Find the exact collision point between current and next position
-   * @param {THREE.Vector3} currentPos - Current position
-   * @param {THREE.Vector3} nextPos - Next position
-   * @param {number} terrainHeight - Terrain height at next position
-   * @returns {THREE.Vector3} - Hit point
-   */
-  interpolateTerrainHit(currentPos, nextPos, terrainHeight) {
-    // If current position is already below terrain, return current position
-    if (currentPos.z <= terrainHeight) {
-      return currentPos.clone();
-    }
-
-    // Binary search for precise hit point
-    let low = 0.0;
-    let high = 1.0;
-    let hitPoint = currentPos.clone();
-
-    for (let i = 0; i < 10; i++) { // 10 iterations for precision
-      const t = (low + high) / 2;
-      const testPoint = currentPos.clone().lerp(nextPos, t);
-
-      try {
-        const testHeight = sampleHeight(testPoint.x, testPoint.y);
-
-        if (testPoint.z <= testHeight) {
-          high = t;
-          hitPoint.copy(testPoint);
-        } else {
-          low = t;
-        }
-      } catch (error) {
-        break; // Exit if sampling fails
-      }
-    }
-
-    // Ensure hit point is exactly on terrain surface
-    try {
-      const finalHeight = sampleHeight(hitPoint.x, hitPoint.y);
-      hitPoint.z = finalHeight;
-    } catch (error) {
-      // Keep the interpolated Z if sampling fails
-    }
-
-    return hitPoint;
-  }
-
-  /**
-   * Calculate reflected velocity after collision
-   * @param {THREE.Vector3} velocity - Incoming velocity
-   * @param {THREE.Vector3} normal - Surface normal at collision point
-   * @param {number} energyLoss - Energy loss factor (0-1, where 1 = no loss)
-   * @returns {THREE.Vector3} - Reflected velocity
-   */
-  calculateReflection(velocity, normal, energyLoss = 0.8) {
+  calculateReflection = (velocity, normal, energyLoss = 0.8) => {
     // Reflect velocity: v' = v - 2(v·n)n
     const dotProduct = velocity.dot(normal);
     const reflectedVelocity = velocity.clone().sub(
@@ -170,13 +141,7 @@ export class CollisionDetector {
     return reflectedVelocity;
   }
 
-  /**
-   * Check collision between a point and terrain
-   * @param {THREE.Vector3} position - Position to check
-   * @param {number} radius - Collision radius
-   * @returns {Object|null} - Collision data or null
-   */
-  checkPointTerrainCollision(position, radius = 0) {
+  checkPointTerrainCollision = (position, radius = 0) => {
     if (!this.terrainMesh) return null;
 
     // Raycast downward from position
@@ -201,13 +166,7 @@ export class CollisionDetector {
     return null;
   }
 
-  /**
-   * Get terrain height at a specific X,Y position
-   * @param {number} x - X coordinate
-   * @param {number} y - Y coordinate
-   * @returns {number|null} - Terrain height or null if not found
-   */
-  getTerrainHeight(x, y) {
+  getTerrainHeight = (x, y) => {
     if (!this.terrainMesh) return null;
 
     // Raycast downward from high above the position
@@ -223,26 +182,12 @@ export class CollisionDetector {
     return null;
   }
 
-  /**
-   * Check collision between two spheres
-   * @param {THREE.Vector3} pos1 - First sphere position
-   * @param {number} radius1 - First sphere radius
-   * @param {THREE.Vector3} pos2 - Second sphere position
-   * @param {number} radius2 - Second sphere radius
-   * @returns {boolean} - True if collision detected
-   */
-  checkSphereCollision(pos1, radius1, pos2, radius2) {
+  checkSphereCollision = (pos1, radius1, pos2, radius2) => {
     const distance = pos1.distanceTo(pos2);
     return distance <= (radius1 + radius2);
   }
 
-  /**
-   * Check if a laser hits any enemies in the scene
-   * @param {THREE.Vector3} position - Laser position
-   * @param {number} radius - Hit detection radius
-   * @returns {Array} - Array of hit objects
-   */
-  checkLaserEnemyCollision(position, radius = 150) {
+  checkLaserEnemyCollision = (position, radius = 150) => {
     // This would integrate with enemy manager
     if (window.game && window.game.enemyManager) {
       return window.game.enemyManager.damageEnemiesInArea(position, radius, 25);
@@ -250,20 +195,14 @@ export class CollisionDetector {
     return [];
   }
 
-  /**
-   * Update collision detector (call this each frame if needed)
-   */
-  update() {
+  update = () => {
     // Re-find terrain mesh if it was lost
     if (!this.terrainMesh) {
       this.findTerrainMesh();
     }
   }
 
-  /**
-   * Dispose of resources
-   */
-  dispose() {
+  dispose = () => {
     this.terrainMesh = null;
     this.scene = null;
     console.log("🗑️ Collision detector disposed");

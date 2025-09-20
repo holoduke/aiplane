@@ -5,9 +5,10 @@ import { degToRad } from "three/src/math/MathUtils.js";
 import { sampleHeight } from "../noise.js";
 
 export class Player {
-  constructor(scene, camera) {
+  constructor(scene, camera, collisionDetector = null) {
     this.scene = scene;
     this.camera = camera;
+    this.collisionDetector = collisionDetector;
     this.mesh = null;
     this.velocity = new THREE.Vector3();
     // Find a good spawn position with low terrain
@@ -794,11 +795,14 @@ export class Player {
       }
 
       // Check terrain collision using CollisionDetector
-      const collision = this.collisionDetector.checkLaserTerrainCollision(
-        laser.position,
-        laser.velocity,
+      let collision = null;
+      if (this.collisionDetector) {
+        collision = this.collisionDetector.checkLaserTerrainCollision(
+          laser.position,
+          laser.velocity,
         deltaTime
-      );
+        );
+      }
 
       if (collision) {
         console.log("🎯 Laser hit terrain!", collision.point);
@@ -850,19 +854,19 @@ export class Player {
       laser.glow.position.copy(laser.position);
 
       // Check collision with enemies using CollisionDetector
-      const enemyHits = this.collisionDetector.checkLaserEnemyCollision(
-        laser.position,
-        150
-      );
-      if (enemyHits.length > 0) {
-        console.log(`🔫💥 Laser hit ${enemyHits.length} enemies!`);
-        // Remove laser on hit
-        this.scene.remove(laser.mesh);
-        this.scene.remove(laser.glow);
-        this.lasers.splice(i, 1);
-        continue;
-      } else {
-        console.log(`🔫❌ No enemy manager found for collision check`);
+      if (this.collisionDetector) {
+        const enemyHits = this.collisionDetector.checkLaserEnemyCollision(
+          laser.position,
+          150
+        );
+        if (enemyHits.length > 0) {
+          console.log(`🔫💥 Laser hit ${enemyHits.length} enemies!`);
+          // Remove laser on hit
+          this.scene.remove(laser.mesh);
+          this.scene.remove(laser.glow);
+          this.lasers.splice(i, 1);
+          continue;
+        }
       }
 
       // Add slight pulsing effect to make it more visible

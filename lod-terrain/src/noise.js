@@ -97,21 +97,36 @@ export function setNoiseHeightGain(gain) {
   applySmoothing(currentSmoothStrength);
 }
 
+function mirroredRepeat(x) {
+    const floorX = Math.floor(x);
+    let t = x - floorX;
+    if (floorX % 2 !== 0) {
+        t = 1.0 - t;
+    }
+    return t;
+}
+
 export function sampleHeight(x, y) {
   // Same height calculation as used in the shaders
   const st = { x: x / 1024.0, y: y / 1024.0 };
 
-  // Sample the base texture
-  const u = Math.floor((st.x % 1.0) * noiseWidth);
-  const v = Math.floor((st.y % 1.0) * noiseWidth);
-  const index = Math.min(size - 1, Math.max(0, v * noiseWidth + u));
+  // Sample the base texture with mirrored repeat wrapping
+  const u = mirroredRepeat(st.x) * noiseWidth;
+  const v = mirroredRepeat(st.y) * noiseWidth;
+  const index = Math.min(size - 1, Math.max(0, Math.floor(v) * noiseWidth + Math.floor(u)));
   let h = (textureData[index] / 255.0) * 1024.0;
 
   // Add detail layer (16x scale)
-  const u16 = Math.floor(((st.x * 16.0) % 1.0) * noiseWidth);
-  const v16 = Math.floor(((st.y * 16.0) % 1.0) * noiseWidth);
-  const index16 = Math.min(size - 1, Math.max(0, v16 * noiseWidth + u16));
+  const u16 = mirroredRepeat(st.x * 16.0) * noiseWidth;
+  const v16 = mirroredRepeat(st.y * 16.0) * noiseWidth;
+  const index16 = Math.min(size - 1, Math.max(0, Math.floor(v16) * noiseWidth + Math.floor(u16)));
   h += (textureData[index16] / 255.0) * 64.0;
+
+  // Add detail layer (256x scale)
+  const u256 = mirroredRepeat(st.x * 256.0) * noiseWidth;
+  const v256 = mirroredRepeat(st.y * 256.0) * noiseWidth;
+  const index256 = Math.min(size - 1, Math.max(0, Math.floor(v256) * noiseWidth + Math.floor(u256)));
+  h += (textureData[index256] / 255.0) * 4.0;
 
   // Apply the same transformation as in shaders: h * h / 2000.0
   return (h * h) / 2000.0;
