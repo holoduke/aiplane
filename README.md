@@ -1,8 +1,14 @@
-# Fighter Jet Terrain Game 🚀
+# Vibe coded jet fighter game
 
 A high-performance 3D fighter jet game featuring dynamic terrain generation, advanced lighting systems, and immersive gameplay mechanics built with Three.js.
 
-![Fighter Jet Game Hero](assets/screenshots/screenshot1.png)
+<div align="center">
+
+<img src="src/assets/screenshots/Screenshot 2025-09-21 at 22.17.38.png" width="32%" alt="Jet Fighter Game Screenshot 1">
+<img src="src/assets/screenshots/Screenshot 2025-09-21 at 22.17.51.png" width="32%" alt="Jet Fighter Game Screenshot 2">
+<img src="src/assets/screenshots/Screenshot 2025-09-21 at 22.18.00.png" width="32%" alt="Jet Fighter Game Screenshot 3">
+
+</div>
 
 ## Features ✨
 
@@ -235,24 +241,6 @@ This entire project was **vibe coded** using AI assistance from:
 
 *The fusion of human creativity and AI collaboration made this ambitious 3D game possible.*
 
-## Screenshots 📸
-
-<div align="center">
-
-### Terrain Exploration & Environments
-<img src="assets/screenshots/screenshot2.png" width="48%" alt="Terrain Environment 1">
-<img src="assets/screenshots/screenshot3.png" width="48%" alt="Terrain Environment 2">
-
-### Dynamic Lighting & Shadows
-<img src="assets/screenshots/screenshot4.png" width="48%" alt="Dynamic Lighting">
-<img src="assets/screenshots/screenshot5.png" width="48%" alt="Shadow System">
-
-### Gameplay & User Interface
-<img src="assets/screenshots/screenshot6.png" width="98%" alt="Game Interface">
-
-</div>
-
-*The game features multiple terrain environments, advanced lighting systems, and an intuitive user interface for real-time parameter adjustment.*
 
 ---
 
