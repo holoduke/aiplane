@@ -2,7 +2,7 @@
 // Based on Ken Perlin’s reference implementation
 // http://mrl.nyu.edu/~perlin/noise/
 
-export class ImprovedNoise {
+export class PerlinNoise {
   constructor(seed = null) {
     // Default permutation
     this.perm = new Uint8Array(512);

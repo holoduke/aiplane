@@ -263,6 +263,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.ambientStrength = value / 100;
       ambientLabel.textContent = `Ambient strength: ${value}%`;
+      console.log('🌟 Ambient strength changed to:', app.ambientStrength, 'terrain:', !!app.terrain);
       app.terrain?.updateAmbient(
         app.ambientDirection,
         app.ambientStrength,
@@ -295,6 +296,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.specularStrength = value / 100;
       specularLabel.textContent = `Specular strength: ${value}%`;
+      console.log('✨ Specular strength changed to:', app.specularStrength, 'terrain:', !!app.terrain);
       app.terrain?.updateSpecularStrength(app.specularStrength);
     },
   });
@@ -309,7 +311,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.sunStrengthBase = value / 100;
       sunStrengthLabel.textContent = `Sun strength: ${value}%`;
-      app.updateSun();
+      app.environmentManager.updateSun();
     },
   });
 
@@ -323,7 +325,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.sunWarmth = value / 100;
       sunWarmthLabel.textContent = `Sun warmth: ${value}%`;
-      app.updateSun();
+      app.environmentManager.updateSun();
     },
   });
 
@@ -336,7 +338,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.sunTime = value;
       sunTimeLabel.textContent = `Time: ${value.toFixed(1)}h`;
-      app.updateSun();
+      app.environmentManager.updateSun();
     },
   });
 

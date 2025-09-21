@@ -10,6 +10,7 @@ import { scene } from "./scene.js";
 import { EnvironmentManager } from "./environment/EnvironmentManager.js";
 import {
   noise,
+  getNoise,
   setNoiseSmoothing,
   setNoiseHeightGain,
   setNoiseWidth,
@@ -18,7 +19,7 @@ import {
   DEFAULT_NOISE_SMOOTHING,
   MIN_NOISE_WIDTH,
   MAX_NOISE_WIDTH,
-} from "./noise.js";
+} from "./noise/index.js";
 import {
   renderer,
   setRendererPixelRatio,
@@ -297,7 +298,7 @@ class TerrainApp {
     }
 
     this.terrain = new Terrain(
-      noise,
+      getNoise(),
       8192,
       this.terrainLevels,
       this.terrainResolution,

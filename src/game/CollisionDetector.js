@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { sampleHeight } from "../noise.js";
+import { sampleHeight } from "../noise/index.js";
 
 export class CollisionDetector {
   constructor(scene) {

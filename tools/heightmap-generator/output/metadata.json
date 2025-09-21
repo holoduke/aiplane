@@ -1,0 +1,90 @@
+{
+  "version": "1.0",
+  "timestamp": "2025-09-21T20:48:18.182Z",
+  "gridSize": "3x3",
+  "heightmapSize": "256x256",
+  "stitchSize": 32,
+  "regions": [
+    {
+      "index": 0,
+      "name": "Mountains",
+      "description": "High altitude peaks with sharp ridges",
+      "baseHeight": 0.8,
+      "roughness": 0.9,
+      "erosion": "thermal",
+      "seed": 1001
+    },
+    {
+      "index": 1,
+      "name": "Plains",
+      "description": "Flat grasslands with gentle rolling hills",
+      "baseHeight": 0.2,
+      "roughness": 0.3,
+      "erosion": "none",
+      "seed": 1002
+    },
+    {
+      "index": 2,
+      "name": "Canyons",
+      "description": "Deep carved valleys with steep walls",
+      "baseHeight": 0.1,
+      "roughness": 0.7,
+      "erosion": "hydraulic",
+      "seed": 1003
+    },
+    {
+      "index": 3,
+      "name": "Hills",
+      "description": "Moderate elevation with smooth slopes",
+      "baseHeight": 0.4,
+      "roughness": 0.5,
+      "erosion": "light",
+      "seed": 1004
+    },
+    {
+      "index": 4,
+      "name": "Valleys",
+      "description": "Low-lying areas with water drainage",
+      "baseHeight": 0.05,
+      "roughness": 0.4,
+      "erosion": "hydraulic",
+      "seed": 1005
+    },
+    {
+      "index": 5,
+      "name": "Plateaus",
+      "description": "Elevated flat regions with cliff edges",
+      "baseHeight": 0.6,
+      "roughness": 0.2,
+      "erosion": "thermal",
+      "seed": 1006
+    },
+    {
+      "index": 6,
+      "name": "Badlands",
+      "description": "Eroded wasteland with complex formations",
+      "baseHeight": 0.3,
+      "roughness": 0.8,
+      "erosion": "thermal",
+      "seed": 1007
+    },
+    {
+      "index": 7,
+      "name": "Highlands",
+      "description": "Elevated terrain with moderate variation",
+      "baseHeight": 0.5,
+      "roughness": 0.6,
+      "erosion": "light",
+      "seed": 1008
+    },
+    {
+      "index": 8,
+      "name": "Center",
+      "description": "Central mixed terrain with balanced features",
+      "baseHeight": 0.35,
+      "roughness": 0.55,
+      "erosion": "light",
+      "seed": 1009
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { LensFlare } from "./LensFlare.js";
-import { sampleHeight } from "./noise.js";
+import { sampleHeight } from "./noise/index.js";
 import { sampleSkyColors, computeSunDirection } from "./sky.js";
 import { material } from "./material.js";
 import { geometry } from "./geometry.js";
@@ -466,6 +466,7 @@ export class LightingAndShadows {
     const maxZ = maxBounds.z + marginZ;
     const depth = Math.max(1.0, maxZ - minZ);
     const centerZ = (minZ + maxZ) * 0.5;
+
     const cameraOffset = depth * 0.5;
 
     const texelSize = (halfWidth * 2) / this.shadowResolution;

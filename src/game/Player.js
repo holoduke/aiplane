@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { degToRad } from "three/src/math/MathUtils.js";
-import { sampleHeight } from "../noise.js";
+import { sampleHeight } from "../noise/index.js";
 import { EnvironmentEffectsManager } from "./EnvironmentEffectsManager.js";
 
 export class Player {
