@@ -1,0 +1,495 @@
+import * as THREE from "three";
+import { Player } from "./Player.js";
+import { InputManager } from "./InputManager.js";
+import { CollisionDetector } from "./CollisionDetector.js";
+import { UIManager } from "../ui/UIManager.js";
+import { camera } from "../camera.js";
+import { scene } from "../scene.js";
+import { renderer } from "../renderer.js";
+
+export class Game {
+  constructor(app) {
+    this.app = app; // Reference to the main terrain app
+    this.scene = scene;
+    this.camera = camera;
+    this.renderer = renderer;
+
+    // Game state
+    this.gameStarted = false;
+    this.gamePaused = false;
+    this.gameOver = false;
+
+    // Game systems
+    this.collisionDetector = new CollisionDetector(scene);
+    this.uiManager = new UIManager(this);
+    this.inputManager = null; // Will be created after player
+    this.player = null;
+    this.enemyManager = null; // Will be added later
+    this.hud = null; // Will be added later
+
+    // Game settings
+    this.gameMode = "play"; // 'play' or 'float'
+
+    // Store original camera position for float mode
+    this.originalCameraPosition = null;
+    this.originalCameraTarget = null;
+
+    // Performance tracking
+    this.lastUpdateTime = 0;
+    this.deltaTime = 0;
+
+    // Pause camera rotation
+    this.pauseCameraAngle = 0;
+    this.pauseCameraDistance = 50;
+    this.pauseCameraHeight = 100;
+
+    console.log("🎮 Game system initialized");
+  }
+
+  async startGame(mode = "play") {
+    console.log(`🚀 Starting game in ${mode} mode`);
+
+    this.gameMode = mode;
+    this.gameStarted = true;
+    this.gameOver = false;
+    this.gamePaused = false;
+
+    // Store original camera state for float mode
+    if (!this.originalCameraPosition) {
+      this.originalCameraPosition = this.camera.position.clone();
+      this.originalCameraTarget =
+        this.app.controls?.target?.clone() || new THREE.Vector3();
+    }
+
+    if (mode === "play") {
+      await this.initializePlayMode();
+    } else if (mode === "float") {
+      this.initializeFloatMode();
+    }
+
+    // Enable input
+    if (this.inputManager) {
+      this.inputManager.enable();
+    }
+
+    // Make sure intro mode is disabled
+    if (this.app.startExperience) {
+      this.app.startExperience();
+    }
+
+    // Disable mouse camera controls in game mode
+    this.app.useFreeCamera = false;
+
+    // Stop main menu music and start appropriate game music
+    if (mode === "play") {
+      this.app.audioManager.transitionToGame();
+    } else {
+      // For float mode, stop all music to focus on exploration
+      this.app.audioManager.stopAll();
+    }
+
+    // Use screen manager for proper transition
+    this.uiManager.screenManager.showGame();
+    this.hideUIForGameMode(mode);
+
+    console.log(`✅ Game started in ${mode} mode`);
+  }
+
+  async initializePlayMode() {
+    console.log("🎮 Initializing play mode...");
+
+    // Create player
+    this.player = new Player(this.scene, this.camera, this.collisionDetector);
+
+    // Create input manager with player reference
+    this.inputManager = new InputManager(this.player);
+    this.inputManager.game = this; // Set game reference for pause functionality
+
+    // Wait for player to load
+    let attempts = 0;
+    while (!this.player.mesh && attempts < 50) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      attempts++;
+    }
+
+    if (this.player.mesh) {
+      console.log("✅ Player loaded successfully");
+    } else {
+      console.warn("⚠️ Player took too long to load, continuing anyway");
+    }
+
+    // Disable terrain controls for play mode
+    if (this.app.controls) {
+      this.app.controls.enabled = false;
+    }
+
+    // Set up game-specific camera behavior
+    this.setupPlayCamera();
+  }
+
+  initializeFloatMode() {
+    console.log("🌊 Initializing float mode...");
+
+    // Disable orbital controls completely for true free camera
+    if (this.app.controls) {
+      this.app.controls.enabled = false;
+    }
+
+    // Enable full free camera mode directly (like pressing 'C')
+    this.app.useFreeCamera = true;
+    this.camera.rotation.order = "YXZ";
+    ///this.camera.lookAt(null);
+
+    // Reset camera rotation to clear lookAt state
+    this.camera.rotation.set(0, 0, 0);
+    this.camera.quaternion.set(0, 0, 0, 1);
+    this.camera.updateMatrixWorld(true);
+
+    // Stop camera from looking at any target
+    this.camera.up.set(0, 0, 1); // Set world up vector
+
+    // Clear any existing look-at behavior
+    if (this.app.lookTarget) {
+      this.app.lookTarget = null;
+    }
+
+    // Disable intro mode to allow free camera
+    this.app.introActive = false;
+
+    console.log("🎥 Float mode camera setup:", {
+      useFreeCamera: this.app.useFreeCamera,
+      controlsEnabled: this.app.controls?.enabled,
+      pointerLocked: this.app.pointerLocked,
+      introActive: this.app.introActive,
+      center: this.app.center,
+    });
+
+    // Add a debug check after a delay to see if useFreeCamera gets overridden
+    setTimeout(() => {
+      console.log(
+        "🔍 Checking useFreeCamera after delay:",
+        this.app.useFreeCamera
+      );
+      if (!this.app.useFreeCamera) {
+        console.warn(
+          "⚠️ useFreeCamera was reset to false! Setting it back to true."
+        );
+        this.app.useFreeCamera = true;
+      }
+    }, 200);
+
+    // Set up camera rotation tracking
+    const _tmpDirection = new THREE.Vector3();
+    this.camera.getWorldDirection(_tmpDirection).normalize();
+    this.app.cameraRotation.x = Math.asin(
+      THREE.MathUtils.clamp(_tmpDirection.z, -1, 1)
+    );
+    this.app.cameraRotation.y = Math.atan2(_tmpDirection.x, _tmpDirection.y);
+
+    // Reset camera to original position
+    this.camera.position.copy(this.originalCameraPosition);
+
+    // Lock the mouse pointer for free camera controls (with delay)
+    setTimeout(() => {
+      const pointerLockElement = this.renderer.domElement;
+      const requestPointerLock = () => {
+        const request =
+          pointerLockElement.requestPointerLock ||
+          pointerLockElement.mozRequestPointerLock ||
+          pointerLockElement.webkitRequestPointerLock;
+        if (request) {
+          request.call(pointerLockElement);
+          return true;
+        }
+        return false;
+      };
+
+      if (!this.app.pointerLocked) {
+        const locked = requestPointerLock();
+        console.log("🔒 Pointer lock attempted:", locked);
+        if (!locked) {
+          console.warn("Could not lock mouse pointer for free camera");
+        }
+      }
+    }, 100); // Small delay to ensure everything is set up
+
+    // No player in float mode
+    this.player = null;
+  }
+
+  setupPlayCamera() {
+    // Camera will be managed by the player in play mode
+    if (this.player) {
+      // Initial camera position relative to player (Y is forward, Z is up)
+      this.camera.position.set(0, -1900, 1500);
+      this.camera.lookAt(this.player.position);
+    }
+  }
+
+  pauseGame() {
+    if (!this.gameStarted || this.gameOver) return;
+
+    this.gamePaused = !this.gamePaused;
+
+    if (this.gamePaused) {
+      this.inputManager.disable();
+      this.uiManager.screenManager.showPause();
+      console.log("⏸️ Game paused");
+    } else {
+      this.inputManager.enable();
+      this.uiManager.screenManager.resumeGame();
+      console.log("▶️ Game resumed");
+    }
+  }
+
+  stopGame() {
+    console.trace();
+    console.log("🛑 Stopping game");
+
+    this.gameStarted = false;
+    this.gamePaused = false;
+    if (this.inputManager) {
+      this.inputManager.disable();
+    }
+
+    // Release pointer lock for main menu interaction
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+
+    // Clean up player
+    if (this.player && this.player.mesh) {
+      this.scene.remove(this.player.mesh);
+      this.player = null;
+    }
+
+    // Restore original camera controls
+    if (this.app.controls) {
+      this.app.controls.enabled = true;
+      if (this.originalCameraPosition) {
+        this.camera.position.copy(this.originalCameraPosition);
+        this.app.controls.target.copy(this.originalCameraTarget);
+      }
+    }
+
+    // Use screen manager to return to main menu
+    this.uiManager.screenManager.showMainMenu();
+
+    // Hide UI elements for main menu (not float mode)
+    this.hideUIForMainMenu();
+
+    // Restart main menu music
+    this.app.audioManager.transitionToMainMenu();
+
+    // Re-enable intro camera animation
+    this.app.introActive = true;
+    this.app.introElapsed = 0;
+  }
+
+  restartGame() {
+    console.log("🔄 Restarting game");
+
+    const currentMode = this.gameMode;
+    this.stopGame();
+
+    // Small delay then restart
+    setTimeout(() => {
+      this.startGame(currentMode);
+    }, 100);
+  }
+
+  update(deltaTime) {
+    if (!this.gameStarted || this.gameOver) return;
+
+    this.deltaTime = deltaTime;
+
+    // Handle pause camera rotation
+    if (this.gamePaused && this.player && this.player.mesh) {
+      this.updatePauseCamera(deltaTime);
+      return; // Don't update game logic when paused
+    }
+
+    // Update input manager (handles player input automatically)
+    if (this.inputManager && this.gameMode === "play") {
+      this.inputManager.update(deltaTime);
+    }
+
+    // Update collision detector
+    this.collisionDetector.update();
+
+    // Update player
+    if (this.player && this.gameMode === "play") {
+      this.player.update(deltaTime);
+    }
+
+    // Update other game systems
+    if (this.enemyManager) {
+      this.enemyManager.update(deltaTime);
+    }
+
+    if (this.hud) {
+      this.hud.update(deltaTime);
+    }
+  }
+
+  handleInput(deltaTime) {
+    const movement = this.inputManager.getMovementInput();
+    const actions = this.inputManager.getActionInput();
+
+    // Player movement (only in play mode)
+    if (this.player && this.gameMode === "play") {
+      if (movement.left && !movement.right) {
+        this.player.steerLeft(deltaTime);
+      } else if (movement.right && !movement.left) {
+        this.player.steerRight(deltaTime);
+      } else {
+        this.player.stabilize(deltaTime);
+      }
+
+      // Player actions
+      if (actions.fireLasers) {
+        this.player.fireLasers();
+      }
+
+      if (actions.fireBombs) {
+        this.player.fireBomb();
+      }
+
+      if (actions.afterburner) {
+        if (!this.player.afterburner) {
+          this.player.toggleAfterburner();
+        }
+      } else {
+        if (this.player.afterburner) {
+          this.player.toggleAfterburner();
+        }
+      }
+    }
+
+    // Game controls
+    if (actions.pause) {
+      this.pauseGame();
+    }
+
+    if (actions.restart) {
+      this.restartGame();
+    }
+  }
+
+  // Game state getters
+  isGameActive() {
+    return this.gameStarted && !this.gamePaused && !this.gameOver;
+  }
+
+  isPlayMode() {
+    return this.gameMode === "play";
+  }
+
+  isFloatMode() {
+    return this.gameMode === "float";
+  }
+
+  // UI visibility management
+  hideUIForGameMode(mode) {
+    if (mode === "play") {
+      // Hide control panel, intro overlay, and controls info in play mode
+      if (this.app.controlPanel?.panel) {
+        this.app.controlPanel.panel.style.display = "none";
+      }
+      if (this.app.introOverlay) {
+        this.app.introOverlay.style.display = "none";
+      }
+      const controlsInfo = document.getElementById("controls-info");
+      if (controlsInfo) {
+        controlsInfo.style.display = "none";
+      }
+    } else if (mode === "float") {
+      // Show UI elements in float mode
+      this.showUIForFloatMode();
+    }
+  }
+
+  showUIForFloatMode() {
+    // Show control panel, intro overlay, controls info, position info, and environment toggle in float mode
+    if (this.app.controlPanel?.panel) {
+      this.app.controlPanel.panel.style.display = "block";
+    }
+    if (this.app.introOverlay) {
+      this.app.introOverlay.style.display = "block";
+    }
+    const controlsInfo = document.getElementById("controls-info");
+    if (controlsInfo) {
+      controlsInfo.style.display = "block";
+    }
+    // Show position info (bottom right HUD)
+    const hudEl = document.querySelector(
+      'div[style*="bottom: 10px"][style*="right: 10px"]'
+    );
+    if (hudEl) {
+      hudEl.style.display = "block";
+    }
+    // Show environment toggle (terrain selector)
+    if (this.app.environmentToggle?.element) {
+      this.app.environmentToggle.element.style.display = "block";
+    }
+  }
+
+  hideUIForMainMenu() {
+    // Hide all UI elements for clean main menu
+    if (this.app.controlPanel?.panel) {
+      this.app.controlPanel.panel.style.display = "none";
+    }
+    if (this.app.introOverlay) {
+      this.app.introOverlay.style.display = "none";
+    }
+    const controlsInfo = document.getElementById("controls-info");
+    if (controlsInfo) {
+      controlsInfo.style.display = "none";
+    }
+    // Hide position info (bottom right HUD)
+    const hudEl = document.querySelector(
+      'div[style*="bottom: 10px"][style*="right: 10px"]'
+    );
+    if (hudEl) {
+      hudEl.style.display = "none";
+    }
+    // Hide environment toggle (terrain selector)
+    if (this.app.environmentToggle?.element) {
+      this.app.environmentToggle.element.style.display = "none";
+    }
+  }
+
+  // Pause camera rotation around plane
+  updatePauseCamera(deltaTime) {
+    if (!this.player || !this.player.mesh) return;
+
+    // Rotate camera around the plane
+    this.pauseCameraAngle += deltaTime * 0.5; // Slow rotation
+
+    const playerPosition = this.player.mesh.position;
+
+    // Calculate camera position in a circle around the plane
+    const x =
+      playerPosition.x +
+      Math.cos(this.pauseCameraAngle) * this.pauseCameraDistance;
+    const y =
+      playerPosition.y +
+      Math.sin(this.pauseCameraAngle) * this.pauseCameraDistance;
+    const z = playerPosition.z + this.pauseCameraHeight;
+
+    // Update camera position and look at the plane
+    this.camera.position.set(x, y, z);
+    this.camera.lookAt(playerPosition);
+  }
+
+  // Cleanup
+  dispose() {
+    this.stopGame();
+    if (this.inputManager) {
+      this.inputManager.dispose();
+    }
+    this.uiManager.dispose();
+
+    console.log("🗑️ Game disposed");
+  }
+}

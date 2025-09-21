@@ -1,0 +1,31 @@
+{
+  "name": "lod-terrain",
+  "version": "1.0.0",
+  "description": "LOD Terrain ===========",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/felixpalmer/lod-terrain.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/felixpalmer/lod-terrain/issues"
+  },
+  "homepage": "https://github.com/felixpalmer/lod-terrain#readme",
+  "devDependencies": {
+    "vite": "^6.3.6"
+  },
+  "dependencies": {
+    "stats.js": "^0.17.0",
+    "three": "^0.180.0"
+  }
+}
