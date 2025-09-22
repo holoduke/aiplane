@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { ImprovedNoise } from '../../src/ImprovedNoise.js';
+import { PerlinNoise } from '../../src/noise/PerlinNoise.js';
 import sharp from 'sharp';
 import cliProgress from 'cli-progress';
 import { Command } from 'commander';
@@ -184,7 +184,7 @@ class HeightmapGenerator {
   }
 
   async generateRegionHeightmap(region) {
-    const perlin = new ImprovedNoise(region.seed);
+    const perlin = new PerlinNoise(region.seed);
     const data = new Float32Array(this.width * this.height);
 
     // Generate base height using multiple octaves
@@ -228,7 +228,7 @@ class HeightmapGenerator {
     // Apply smoothing if specified
     if (region.roughness < 0.5) {
       const smoothPasses = Math.floor((0.5 - region.roughness) * 10);
-      processedData = ImprovedNoise.smoothHeightmap(
+      processedData = PerlinNoise.smoothHeightmap(
         processedData,
         this.width,
         this.height,
@@ -242,7 +242,7 @@ class HeightmapGenerator {
   applyErosion(heightmap, erosionType) {
     switch (erosionType) {
       case 'thermal':
-        return ImprovedNoise.thermalErosion(
+        return PerlinNoise.thermalErosion(
           heightmap,
           this.width,
           this.height,
@@ -251,7 +251,7 @@ class HeightmapGenerator {
         );
 
       case 'hydraulic':
-        return ImprovedNoise.hydraulicErosion(
+        return PerlinNoise.hydraulicErosion(
           heightmap,
           this.width,
           this.height,
@@ -263,7 +263,7 @@ class HeightmapGenerator {
         );
 
       case 'light':
-        return ImprovedNoise.thermalErosion(
+        return PerlinNoise.thermalErosion(
           heightmap,
           this.width,
           this.height,
