@@ -3,6 +3,7 @@ precision highp sampler2D;
 
 uniform float uScale;
 uniform sampler2D uHeightData;
+uniform vec2 uGridOffset;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;

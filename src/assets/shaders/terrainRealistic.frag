@@ -3,6 +3,7 @@ precision highp sampler2D;
 
 uniform float uScale;
 uniform sampler2D uHeightData;
+uniform vec2 uGridOffset;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -29,10 +30,30 @@ varying vec3 vNormal;
 varying vec3 vPosition;
 
 float getHeight(vec3 p) {
-  vec2 st = p.xy / 1024.0;
+  // Apply grid offset for infinite terrain
+  vec2 worldPos = p.xy + uGridOffset;
 
-  float h = 1024.0 * texture2D(uHeightData, st).r;
-  h += 64.0 * texture2D(uHeightData, 16.0 * st).r;
+  // Convert to grid coordinates (each heightmap covers 1024x1024 world units)
+  vec2 gridPos = worldPos / 1024.0;
+
+  // Determine which heightmap cell to sample (0-2 for each axis)
+  vec2 cellIndex = floor(mod(gridPos, 3.0));
+
+  // Local coordinates within the heightmap (0-1)
+  vec2 localST = fract(gridPos);
+
+  // Convert to atlas coordinates
+  // Each cell is 1/3 of the atlas size
+  vec2 atlasOffset = cellIndex / 3.0;
+  vec2 atlasST = (localST / 3.0) + atlasOffset;
+
+  // Sample multiple octaves from the atlas, keeping within cell boundaries
+  float h = 1024.0 * texture2D(uHeightData, atlasST).r;
+
+  vec2 detailST1 = (fract(localST * 16.0) / 3.0) + atlasOffset;
+  h += 64.0 * texture2D(uHeightData, detailST1).r;
+
+  // Square the height, leads to more rocky looking terrain
   return h * h / 2000.0;
 }
 

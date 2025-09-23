@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { texture as terrainTextures } from "./texture.js";
 import { scene } from "./scene.js";
+import { HeightmapAtlas } from "./HeightmapAtlas.js";
 import terrainVert from "./assets/shaders/terrain.vert?raw";
 import terrainMarsVert from "./assets/shaders/terrainMars.vert?raw";
 import terrainFrag from "./assets/shaders/terrain.frag?raw";
@@ -96,9 +97,13 @@ export class Terrain extends THREE.Object3D {
     this.resolution = resolution;
     this.heightData = heightData;
     this.offset = new THREE.Vector3(0, 0, 0);
+    this.gridOffset = new THREE.Vector2(0, 0);
     this.activeShaderIndex = defaultShaderIndex;
     this.fade = { start: 0, end: 0 };
     this.morphRegion = 0.3;
+    this.detailStrength = 0.0; // 0.0 = clean single scale, 1.0 = full multi-octave detail
+    this.heightMultiplier = 1.0; // Height scale multiplier for heightmap
+    this.heightSmoothing = 0.0; // Height smoothing strength
     this.sunDirection = new THREE.Vector3(0, 1, 0);
     this.sunIntensity = 1.0;
     this.sunWarmth = 0.55;
@@ -162,7 +167,9 @@ export class Terrain extends THREE.Object3D {
     const uniforms = {
       uEdgeMorph: { value: edgeMorph },
       uGlobalOffset: { value: this.offset },
+      uGridOffset: { value: this.gridOffset },
       uHeightData: { value: this.heightData },
+      uDebugMode: { value: 0.0 },
       uGrass: { value: terrainTextures.grass },
       uRock: { value: terrainTextures.rock },
       uSnow: { value: terrainTextures.snow },
@@ -176,6 +183,9 @@ export class Terrain extends THREE.Object3D {
       uFogNear: { value: scene.fog ? scene.fog.near : 0 },
       uFogFar: { value: scene.fog ? scene.fog.far : 1 },
       uMorphRegion: { value: this.morphRegion },
+      uDetailStrength: { value: this.detailStrength || 1.0 },
+      uHeightMultiplier: { value: this.heightMultiplier },
+      uHeightSmoothing: { value: this.heightSmoothing },
       uSunDirection: { value: this.sunDirection.clone() },
       uSunIntensity: { value: this.sunIntensity },
       uSunWarmth: { value: this.sunWarmth },
@@ -232,6 +242,15 @@ export class Terrain extends THREE.Object3D {
     plane.receiveShadow = this.shadowsEnabled;
     plane.userData.mainMaterial = terrainMaterial;
     plane.userData.depthMaterial = depthMaterial;
+
+    // Ensure geometry has proper bounds for frustum culling
+    if (this.tileGeometry && !this.tileGeometry.boundingSphere) {
+      this.tileGeometry.computeBoundingSphere();
+    }
+    if (this.tileGeometry && !this.tileGeometry.boundingBox) {
+      this.tileGeometry.computeBoundingBox();
+    }
+
     this.add(plane);
   }
 
@@ -310,6 +329,60 @@ export class Terrain extends THREE.Object3D {
       const uniforms = tile.userData?.mainMaterial?.uniforms;
       if (!uniforms) return;
       uniforms.uMorphRegion.value = this.morphRegion;
+    });
+  }
+
+  updateDetailStrength(value) {
+    this.detailStrength = Math.max(0, Math.min(1, value)); // Clamp 0-1
+    this.children.forEach((tile) => {
+      const uniforms = tile.userData?.mainMaterial?.uniforms;
+      if (!uniforms) return;
+      uniforms.uDetailStrength.value = this.detailStrength;
+    });
+  }
+
+  updateFrustumCulling(enabled) {
+    console.log(`🎭 Updating frustum culling: ${enabled ? 'ON' : 'OFF'} for ${this.children.length} tiles`);
+
+    this.children.forEach((tile, index) => {
+      tile.frustumCulled = enabled;
+
+      // If enabling frustum culling, ensure proper bounding volumes
+      if (enabled) {
+        // Force geometry bounds computation
+        if (tile.geometry && !tile.geometry.boundingSphere) {
+          tile.geometry.computeBoundingSphere();
+        }
+        if (tile.geometry && !tile.geometry.boundingBox) {
+          tile.geometry.computeBoundingBox();
+        }
+
+        // Update matrix world for accurate culling
+        tile.updateMatrixWorld(true);
+
+        // Debug log for first few tiles
+        if (index < 3) {
+          console.log(`🎭 Tile ${index}: boundingSphere=${!!tile.geometry.boundingSphere}, boundingBox=${!!tile.geometry.boundingBox}`);
+        }
+      }
+    });
+  }
+
+  updateHeightMultiplier(value) {
+    this.heightMultiplier = Math.max(0, value);
+    this.children.forEach((tile) => {
+      const uniforms = tile.userData?.mainMaterial?.uniforms;
+      if (!uniforms) return;
+      uniforms.uHeightMultiplier.value = this.heightMultiplier;
+    });
+  }
+
+  updateHeightSmoothing(value) {
+    this.heightSmoothing = Math.max(0, Math.min(1, value)); // Clamp 0-1
+    this.children.forEach((tile) => {
+      const uniforms = tile.userData?.mainMaterial?.uniforms;
+      if (!uniforms) return;
+      uniforms.uHeightSmoothing.value = this.heightSmoothing;
     });
   }
 
@@ -503,6 +576,28 @@ export class Terrain extends THREE.Object3D {
       }
       if (uniforms.uSkyTintStrength) {
         uniforms.uSkyTintStrength.value = this.skyTintStrength;
+      }
+    });
+  }
+
+  updateGridOffset(offsetX, offsetY) {
+    this.gridOffset.set(offsetX, offsetY);
+    this.children.forEach((tile) => {
+      const uniforms = tile.userData?.mainMaterial?.uniforms;
+      if (!uniforms) return;
+      if (uniforms.uGridOffset) {
+        uniforms.uGridOffset.value.copy(this.gridOffset);
+      }
+    });
+  }
+
+  setDebugMode(enabled) {
+    this.debugMode = enabled;
+    this.children.forEach((tile) => {
+      const uniforms = tile.userData?.mainMaterial?.uniforms;
+      if (!uniforms) return;
+      if (uniforms.uDebugMode) {
+        uniforms.uDebugMode.value = enabled ? 1.0 : 0.0;
       }
     });
   }

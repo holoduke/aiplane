@@ -41,8 +41,8 @@ export class InputManager {
 
     switch(event.code) {
       case 'Escape':
-        // Pause the game when Escape is pressed
-        if (this.game && this.game.isGameActive()) {
+        // Pause the game when Escape is pressed (except in explore/float mode)
+        if (this.game && this.game.isGameActive() && this.game.gameMode !== "float") {
           this.game.pauseGame()
         }
         if (this.isMouseLocked) {
@@ -81,8 +81,8 @@ export class InputManager {
     const wasMouseLocked = this.isMouseLocked
     this.isMouseLocked = document.pointerLockElement === document.body
 
-    // If mouse lock was lost (and we were previously locked), pause the game
-    if (wasMouseLocked && !this.isMouseLocked && this.game && this.game.isGameActive()) {
+    // If mouse lock was lost (and we were previously locked), pause the game (except in explore/float mode)
+    if (wasMouseLocked && !this.isMouseLocked && this.game && this.game.isGameActive() && this.game.gameMode !== "float") {
       this.game.pauseGame()
     }
   }

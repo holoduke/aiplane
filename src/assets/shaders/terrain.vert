@@ -7,6 +7,10 @@ uniform vec2 uTileOffset;
 uniform float uScale;
 uniform float uTileResolution;
 uniform float uMorphRegion;
+uniform vec2 uGridOffset;
+uniform float uDetailStrength;
+uniform float uHeightMultiplier;
+uniform float uHeightSmoothing;
 
 varying vec3 vNormal;
 varying vec3 vPosition;
@@ -14,17 +18,23 @@ varying float vMorphFactor;
 
 float getHeight(vec3 p) {
   // Assume a 1024x1024 world
-  float lod = 0.0;//log2(uScale) - 6.0;
   vec2 st = p.xy / 1024.0;
 
-  // Sample multiple times to get more detail out of map
+  // Sample with adjustable detail strength
   float h = 1024.0 * texture2D(uHeightData, st).r;
-  h += 64.0 * texture2D(uHeightData, 16.0 * st).r;
-  h += 4.0 * texture2D(uHeightData, 256.0 * st).r;
+  h += uDetailStrength * 64.0 * texture2D(uHeightData, 16.0 * st).r;
+  h += uDetailStrength * 4.0 * texture2D(uHeightData, 256.0 * st).r;
+
+  // Apply height multiplier
+  h *= uHeightMultiplier;
+
+  // Apply smoothing if enabled (simple height reduction)
+  if (uHeightSmoothing > 0.0) {
+    h = mix(h, h * 0.5, uHeightSmoothing);
+  }
 
   // Square the height, leads to more rocky looking terrain
   return h * h / 2000.0;
-  //return h / 10.0;
 }
 
 vec3 getNormal() {

@@ -997,8 +997,44 @@ export class Player {
       }
 
       if (!bomb.exploded) {
-        // Move bomb forward
-        bomb.position.add(bomb.velocity.clone().multiplyScalar(deltaTime));
+        // Check terrain collision using CollisionDetector (same as lasers)
+        let collision = null;
+        if (this.collisionDetector) {
+          collision = this.collisionDetector.checkLaserTerrainCollision(
+            bomb.position,
+            bomb.velocity,
+            deltaTime
+          );
+        }
+
+        if (collision) {
+          console.log("💣 Bomb hit terrain!", collision.point);
+
+          // Trigger immediate explosion
+          bomb.exploded = true;
+          bomb.explodeTime = currentTime;
+          bomb.position.copy(collision.point);
+
+          // Remove bomb visual elements from scene
+          this.scene.remove(bomb.mesh);
+          this.scene.remove(bomb.glow);
+
+          // Create explosion at impact point
+          this.createExplosion(bomb.position.clone());
+
+          // Damage enemies in explosion area
+          if (window.game && window.game.enemyManager) {
+            const bombHits = window.game.enemyManager.damageEnemiesInArea(
+              bomb.position,
+              300,
+              9999
+            ); // Instant kill damage
+            console.log(`💣💥 Bomb terrain impact hit ${bombHits.length} enemies!`);
+          }
+        } else {
+          // Move bomb forward only if no collision
+          bomb.position.add(bomb.velocity.clone().multiplyScalar(deltaTime));
+        }
 
         // Update bomb and glow positions
         bomb.mesh.position.copy(bomb.position);

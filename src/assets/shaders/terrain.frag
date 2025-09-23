@@ -3,6 +3,8 @@ precision highp sampler2D;
 
 uniform float uScale;
 uniform sampler2D uHeightData;
+uniform vec2 uGridOffset;
+uniform float uDebugMode;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -121,5 +123,27 @@ void main() {
   }
   color *= edgeFade;
 
-  gl_FragColor = vec4(color, edgeFade);
+  // Debug mode: Show LOD levels and chunk boundaries
+  if (uDebugMode > 0.5) {
+    // Show LOD colors based on scale
+    vec3 debugColor = colorForScale(uScale);
+
+    // Add grid lines to show chunk boundaries
+    vec2 gridPos = fract(vPosition.xy / uScale) - 0.5;
+    float gridLine = max(
+      smoothstep(0.48, 0.5, abs(gridPos.x)),
+      smoothstep(0.48, 0.5, abs(gridPos.y))
+    );
+
+    // Mix debug color with grid lines
+    debugColor = mix(debugColor, vec3(0.0), gridLine * 0.5);
+
+    // Show scale number as brightness modulation
+    float scaleIndicator = mod(uScale / 16.0, 1.0);
+    debugColor *= (0.7 + 0.3 * scaleIndicator);
+
+    gl_FragColor = vec4(debugColor * edgeFade, edgeFade);
+  } else {
+    gl_FragColor = vec4(color, edgeFade);
+  }
 }

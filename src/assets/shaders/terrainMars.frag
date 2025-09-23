@@ -3,6 +3,9 @@ precision highp sampler2D;
 
 uniform float uScale;
 uniform sampler2D uHeightData;
+uniform float uDetailStrength;
+uniform vec2 uGridOffset;
+uniform float uDebugMode;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -25,9 +28,15 @@ varying vec3 vNormal;
 varying vec3 vPosition;
 
 float getHeight(vec3 p) {
+  // Simple texture sampling from generated heightmap
   vec2 st = p.xy / 1024.0;
+
+  // Sample with adjustable detail strength
   float h = 1024.0 * texture2D(uHeightData, st).r;
-  h += 64.0 * texture2D(uHeightData, 16.0 * st).r;
+  h += uDetailStrength * 64.0 * texture2D(uHeightData, 16.0 * st).r;
+  h += uDetailStrength * 4.0 * texture2D(uHeightData, 256.0 * st).r;
+
+  // Square the height for rocky terrain
   return h * h / 2000.0;
 }
 
@@ -43,6 +52,28 @@ float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
   p += dot(p, p + 34.23);
   return fract(p.x * p.y);
+}
+
+vec3 colorForScale(float scale) {
+  if ( scale > 32.0 ) {
+    scale /= 32.0;
+  }
+  if ( scale <= 1.0 ) {
+    return vec3(1.0, 0, 0);
+  } else if ( scale <= 2.0 ) {
+    return vec3(0, 1.0, 0);
+  } else if ( scale <= 4.0 ) {
+    return vec3(0, 0, 1.0);
+  } else if ( scale <= 8.0 ) {
+    return vec3(1.0, 1.0, 0);
+  } else if ( scale <= 16.0 ) {
+    return vec3(1.0, 0, 1.0);
+  } else if ( scale <= 32.0 ) {
+    return vec3(1.0, 1.0, 1.0);
+  }
+
+  // Shouldn't happen
+  return vec3(0, 0, 0);
 }
 
 void main() {
@@ -122,5 +153,27 @@ void main() {
     edgeFade = 1.0 - smoothstep(0.0, 1.0, fadeRange);
   }
 
-  gl_FragColor = vec4(baseColor * edgeFade, edgeFade);
+  // Debug mode: Show LOD levels and chunk boundaries
+  if (uDebugMode > 0.5) {
+    // Show LOD colors based on scale
+    vec3 debugColor = colorForScale(uScale);
+
+    // Add grid lines to show chunk boundaries
+    vec2 gridPos = fract(vPosition.xy / uScale) - 0.5;
+    float gridLine = max(
+      smoothstep(0.48, 0.5, abs(gridPos.x)),
+      smoothstep(0.48, 0.5, abs(gridPos.y))
+    );
+
+    // Mix debug color with grid lines
+    debugColor = mix(debugColor, vec3(0.0), gridLine * 0.5);
+
+    // Show scale number as brightness modulation
+    float scaleIndicator = mod(uScale / 16.0, 1.0);
+    debugColor *= (0.7 + 0.3 * scaleIndicator);
+
+    gl_FragColor = vec4(debugColor * edgeFade, edgeFade);
+  } else {
+    gl_FragColor = vec4(baseColor * edgeFade, edgeFade);
+  }
 }

@@ -20,6 +20,13 @@ export class UIManager {
     if (startScreen) {
       startScreen.style.display = "flex";
     }
+
+    // Hide control panel when showing start screen
+    const controlPanel = this.game.app.controlPanel?.panel;
+    if (controlPanel) {
+      controlPanel.style.display = "none";
+    }
+
     document.exitPointerLock();
   }
 
@@ -27,6 +34,12 @@ export class UIManager {
     const startScreen = document.getElementById("start-screen");
     if (startScreen) {
       startScreen.style.display = "none";
+    }
+
+    // Show control panel when game starts
+    const controlPanel = this.game.app.controlPanel?.panel;
+    if (controlPanel) {
+      controlPanel.style.display = "block";
     }
   }
 
@@ -355,7 +368,38 @@ export class UIManager {
       }
     });
 
+    // Settings button
+    const settingsButton = document.createElement("div");
+    settingsButton.id = "settings-button";
+    settingsButton.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 70px;
+      width: 40px;
+      height: 40px;
+      background-color: rgba(0, 255, 0, 0.2);
+      border: 2px solid #00ff00;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1001;
+    `;
+    const settingsIcon = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00ff00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m11-7a3 3 0 0 0-6 0m6 0a3 3 0 0 1 6 0m-6 7a3 3 0 1 0 6 0m-6 0a3 3 0 1 1-6 0"></path>
+      </svg>
+    `;
+    settingsButton.innerHTML = settingsIcon;
+
+    settingsButton.addEventListener("click", () => {
+      this.toggleSettings();
+    });
+
     startScreen.appendChild(muteButton);
+    startScreen.appendChild(settingsButton);
 
     document.body.appendChild(startScreen);
 
@@ -605,6 +649,27 @@ export class UIManager {
     };
 
     typeChar();
+  }
+
+  // Settings panel management
+  toggleSettings() {
+    const controlPanel = this.game.app.controlPanel?.panel;
+
+    if (!controlPanel) {
+      console.log("⚠️ Control panel not found");
+      return;
+    }
+
+    const isVisible = controlPanel.style.display !== "none";
+
+    if (isVisible) {
+      controlPanel.style.display = "none";
+      console.log("⚙️ Settings panel hidden");
+    } else {
+      controlPanel.style.display = "block";
+      controlPanel.style.zIndex = "1002"; // Above the start screen
+      console.log("⚙️ Settings panel shown");
+    }
   }
 
   // Cleanup

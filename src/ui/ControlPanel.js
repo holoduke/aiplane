@@ -3,6 +3,9 @@ export function createControlPanel({
   container,
   applyShaderEnvironment,
   createTerrain,
+  generateProceduralTerrain,
+  loadDefaultHeightmap,
+  applyTerrainEffect,
   setTerrainSmoothing,
   setHeightGain,
 }) {
@@ -19,6 +22,8 @@ export function createControlPanel({
   panel.style.borderRadius = "4px";
   panel.style.pointerEvents = "auto";
   panel.style.maxWidth = "220px";
+  panel.style.display = "none"; // Hidden by default
+  panel.style.zIndex = "1002"; // Ensure it's on top
 
   const createSection = (title, { defaultOpen = false } = {}) => {
     const section = document.createElement("div");
@@ -90,6 +95,8 @@ export function createControlPanel({
 
   const atmosphere = createSection("Atmosphere", { defaultOpen: true });
   const terrain = createSection("Terrain", { defaultOpen: true });
+  const terrainGenerator = createSection("Terrain Generator", { defaultOpen: false });
+  const render = createSection("Render", { defaultOpen: false });
   const lighting = createSection("Lighting", { defaultOpen: false });
   const shadows = createSection("Shadows", { defaultOpen: false });
   const postFx = createSection("Post FX", { defaultOpen: false });
@@ -178,6 +185,24 @@ export function createControlPanel({
     },
   });
 
+  const detailStrengthLabel = terrain.addLabel(
+    `Detail strength: ${Math.round((app.terrain?.detailStrength || 0) * 100)}%`
+  );
+  terrain.addSlider({
+    min: 0,
+    max: 100,
+    value: Math.round((app.terrain?.detailStrength || 0) * 100),
+    onInput: (value) => {
+      const strength = value / 100;
+      detailStrengthLabel.textContent = `Detail strength: ${value}%`;
+      app.terrain?.updateDetailStrength(strength);
+      // Also update collision detector
+      if (app.game && app.game.collisionDetector) {
+        app.game.collisionDetector.setDetailStrength(strength);
+      }
+    },
+  });
+
   const terrainSmoothLabel = terrain.addLabel(
     `Terrain smooth: ${Math.round(app.heightSmoothStrength * 100)}%`
   );
@@ -236,10 +261,26 @@ export function createControlPanel({
     },
   });
 
-  const noiseResolutionLabel = terrain.addLabel(
+
+  // Debug toggle for LOD visualization
+  const debugToggle = document.createElement("div");
+  debugToggle.textContent = `Debug LOD: ${app.debugLOD || false ? "On" : "Off"}`;
+  debugToggle.style.color = "#fff";
+  debugToggle.style.cursor = "pointer";
+  debugToggle.style.userSelect = "none";
+  debugToggle.style.padding = "4px 0";
+  debugToggle.addEventListener("click", () => {
+    app.debugLOD = !app.debugLOD;
+    app.terrain?.setDebugMode(app.debugLOD);
+    debugToggle.textContent = `Debug LOD: ${app.debugLOD ? "On" : "Off"}`;
+  });
+  terrain.body.appendChild(debugToggle);
+
+  // Terrain Generator section
+  const noiseResolutionLabel = terrainGenerator.addLabel(
     `Noise resolution: ${app.noiseResolution}`
   );
-  terrain.addSlider({
+  terrainGenerator.addSlider({
     min: 64,
     max: 1024,
     step: 64,
@@ -248,8 +289,145 @@ export function createControlPanel({
       app.setNoiseResolution(value);
       noiseResolutionLabel.textContent = `Noise resolution: ${app.noiseResolution}`;
       slider.value = String(app.noiseResolution);
-      createTerrain();
-      applyShaderEnvironment(app.terrain.activeShaderIndex);
+    },
+  });
+
+  // Generate procedural terrain button
+  const generateButton = document.createElement("div");
+  generateButton.textContent = "Generate New Terrain";
+  generateButton.style.cursor = "pointer";
+  generateButton.style.userSelect = "none";
+  generateButton.style.padding = "8px 12px";
+  generateButton.style.backgroundColor = "rgba(76, 175, 80, 0.8)";
+  generateButton.style.border = "1px solid rgba(76, 175, 80, 1)";
+  generateButton.style.borderRadius = "4px";
+  generateButton.style.textAlign = "center";
+  generateButton.style.marginTop = "8px";
+  generateButton.style.transition = "background-color 0.2s";
+  generateButton.addEventListener("mouseenter", () => {
+    generateButton.style.backgroundColor = "rgba(76, 175, 80, 1)";
+  });
+  generateButton.addEventListener("mouseleave", () => {
+    generateButton.style.backgroundColor = "rgba(76, 175, 80, 0.8)";
+  });
+  generateButton.addEventListener("click", () => {
+    generateProceduralTerrain();
+  });
+  terrainGenerator.body.appendChild(generateButton);
+
+  // Load default heightmap button
+  const loadDefaultButton = document.createElement("div");
+  loadDefaultButton.textContent = "Load Default";
+  loadDefaultButton.style.cursor = "pointer";
+  loadDefaultButton.style.userSelect = "none";
+  loadDefaultButton.style.padding = "8px 12px";
+  loadDefaultButton.style.backgroundColor = "rgba(33, 150, 243, 0.8)";
+  loadDefaultButton.style.border = "1px solid rgba(33, 150, 243, 1)";
+  loadDefaultButton.style.borderRadius = "4px";
+  loadDefaultButton.style.textAlign = "center";
+  loadDefaultButton.style.marginTop = "4px";
+  loadDefaultButton.style.transition = "background-color 0.2s";
+  loadDefaultButton.addEventListener("mouseenter", () => {
+    loadDefaultButton.style.backgroundColor = "rgba(33, 150, 243, 1)";
+  });
+  loadDefaultButton.addEventListener("mouseleave", () => {
+    loadDefaultButton.style.backgroundColor = "rgba(33, 150, 243, 0.8)";
+  });
+  loadDefaultButton.addEventListener("click", () => {
+    loadDefaultHeightmap();
+  });
+  terrainGenerator.body.appendChild(loadDefaultButton);
+
+  // Terrain effects label
+  const effectsLabel = document.createElement("div");
+  effectsLabel.textContent = "Terrain Effects (Procedural Only):";
+  effectsLabel.style.cssText = `
+    color: #fff;
+    font-size: 11px;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    opacity: 0.8;
+  `;
+  terrainGenerator.body.appendChild(effectsLabel);
+
+  // Thermal Erosion Slider
+  const thermalLabel = terrainGenerator.addLabel("Thermal Erosion: 0 iterations");
+  terrainGenerator.addSlider({
+    min: 0,
+    max: 100,
+    value: 0,
+    onInput: (value) => {
+      thermalLabel.textContent = `Thermal Erosion: ${value} iterations`;
+      if (value > 0) {
+        applyTerrainEffect("thermal", { iterations: value, talus: 0.01 });
+      }
+    },
+  });
+
+  // Hydraulic Erosion Slider
+  const hydraulicLabel = terrainGenerator.addLabel("Hydraulic Erosion: 0%");
+  terrainGenerator.addSlider({
+    min: 0,
+    max: 100,
+    value: 0,
+    onInput: (value) => {
+      hydraulicLabel.textContent = `Hydraulic Erosion: ${value}%`;
+      if (value > 0) {
+        // Scale erosion strength from 0.1 to 0.5 based on slider value
+        const erosionStrength = 0.1 + (value / 100) * 0.4;
+        // Scale droplets from 5000 to 15000 based on slider value
+        const droplets = 5000 + Math.floor((value / 100) * 10000);
+        applyTerrainEffect("hydraulic", {
+          droplets: droplets,
+          erosion: erosionStrength,
+          inertia: 0.05,
+          capacity: 4,
+          deposition: 0.1
+        });
+      }
+    },
+  });
+
+  // Terrain Smoothing Slider
+  const smoothLabel = terrainGenerator.addLabel("Terrain Smoothing: 0 passes");
+  terrainGenerator.addSlider({
+    min: 0,
+    max: 10,
+    value: 0,
+    onInput: (value) => {
+      smoothLabel.textContent = `Terrain Smoothing: ${value} passes`;
+      if (value > 0) {
+        applyTerrainEffect("smooth", { passes: value });
+      }
+    },
+  });
+
+  // Render section
+  const frustumCullingToggle = document.createElement("div");
+  frustumCullingToggle.textContent = `Frustum culling: ${app.frustumCullingEnabled ? "On" : "Off"}`;
+  frustumCullingToggle.style.cursor = "pointer";
+  frustumCullingToggle.style.userSelect = "none";
+  frustumCullingToggle.style.padding = "4px 0";
+  frustumCullingToggle.addEventListener("click", () => {
+    app.frustumCullingEnabled = !app.frustumCullingEnabled;
+    app.terrain?.updateFrustumCulling(app.frustumCullingEnabled);
+    frustumCullingToggle.textContent = `Frustum culling: ${app.frustumCullingEnabled ? "On" : "Off"}`;
+  });
+  render.body.appendChild(frustumCullingToggle);
+
+  const renderScaleLabel = render.addLabel(
+    `Render scale: ${Math.round(app.renderPixelRatio * 100)}%`
+  );
+  render.addSlider({
+    min: 50,
+    max: 200,
+    value: Math.round(app.renderPixelRatio * 100),
+    onInput: (value) => {
+      const ratio = value / 100;
+      app.setRenderPixelRatio(ratio);
+      renderScaleLabel.textContent = `Render scale: ${Math.round(
+        app.renderPixelRatio * 100
+      )}%`;
     },
   });
 
@@ -642,21 +820,6 @@ export function createControlPanel({
     },
   });
 
-  const renderScaleLabel = postFx.addLabel(
-    `Render scale: ${Math.round(app.renderPixelRatio * 100)}%`
-  );
-  postFx.addSlider({
-    min: 50,
-    max: 200,
-    value: Math.round(app.renderPixelRatio * 100),
-    onInput: (value) => {
-      const ratio = value / 100;
-      app.setRenderPixelRatio(ratio);
-      renderScaleLabel.textContent = `Render scale: ${Math.round(
-        app.renderPixelRatio * 100
-      )}%`;
-    },
-  });
 
   container.appendChild(panel);
 

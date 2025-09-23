@@ -7,7 +7,9 @@
   "scripts": {
     "generate": "node generate.js",
     "generate:debug": "node generate.js --debug",
-    "generate:preview": "node generate.js --preview"
+    "generate:preview": "node generate.js --preview",
+    "image-to-bin": "node image-to-bin.js",
+    "convert": "node image-to-bin.js"
   },
   "dependencies": {
     "sharp": "^0.33.0",

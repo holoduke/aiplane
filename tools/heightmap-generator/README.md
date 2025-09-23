@@ -24,6 +24,18 @@ npm install
 npm run generate
 ```
 
+### Image to Binary Conversion
+```bash
+# Convert single image
+npm run convert terrain.png
+
+# Convert with output directory
+npm run convert terrain.png ./output
+
+# Batch convert all images in directory
+npm run convert -- --batch ./images ./output
+```
+
 ### Custom Parameters
 ```bash
 node generate.js --width 512 --height 512 --output ./custom-output --debug
@@ -110,6 +122,15 @@ node generate.js --debug --output ./debug-output
 ### Large Stitch Zones for Smoother Transitions
 ```bash
 node generate.js --stitch-size 64 --output ./smooth-transitions
+```
+
+### Convert Custom Terrain Images
+```bash
+# Convert single custom heightmap
+npm run convert my-terrain.png
+
+# Batch convert terrain images
+npm run convert -- --batch ./terrain-images ./output
 ```
 
 ## Technical Details
