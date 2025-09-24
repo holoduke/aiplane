@@ -312,4 +312,252 @@ export class PerlinNoise {
     }
     return out;
   }
+
+  // --- Advanced Noise Types ---
+
+  // Ridged noise - creates mountain ridges
+  ridgedNoise(x, y, z, octaves = 4, lacunarity = 2.0, gain = 0.5) {
+    let total = 0;
+    let frequency = 1;
+    let amplitude = 1;
+    let maxValue = 0;
+
+    for (let i = 0; i < octaves; i++) {
+      let n = Math.abs(this.noise(x * frequency, y * frequency, z * frequency));
+      n = 1.0 - n; // Invert for ridges
+      n = n * n; // Square for sharper ridges
+      total += n * amplitude;
+      maxValue += amplitude;
+      amplitude *= gain;
+      frequency *= lacunarity;
+    }
+
+    return total / maxValue;
+  }
+
+  // Billow noise - creates billowy, cloud-like formations
+  billowNoise(x, y, z, octaves = 4, lacunarity = 2.0, gain = 0.5) {
+    let total = 0;
+    let frequency = 1;
+    let amplitude = 1;
+    let maxValue = 0;
+
+    for (let i = 0; i < octaves; i++) {
+      let n = this.noise(x * frequency, y * frequency, z * frequency);
+      n = Math.abs(n); // Take absolute value for billow effect
+      total += n * amplitude;
+      maxValue += amplitude;
+      amplitude *= gain;
+      frequency *= lacunarity;
+    }
+
+    return total / maxValue;
+  }
+
+  // Voronoi/Worley noise - creates cellular patterns
+  voronoiNoise(x, y, scale = 1.0, jitter = 1.0) {
+    const scaledX = x * scale;
+    const scaledY = y * scale;
+
+    const baseX = Math.floor(scaledX);
+    const baseY = Math.floor(scaledY);
+
+    let minDist = Infinity;
+
+    // Check 9 neighboring cells
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const cellX = baseX + i;
+        const cellY = baseY + j;
+
+        // Generate random point in cell using hash
+        const hash = ((cellX * 374761393) + (cellY * 668265263)) & 0x7FFFFFFF;
+        const pointX = cellX + (hash % 1000) / 1000.0 * jitter;
+        const pointY = cellY + ((hash / 1000) % 1000) / 1000.0 * jitter;
+
+        const dx = scaledX - pointX;
+        const dy = scaledY - pointY;
+        const dist = dx * dx + dy * dy;
+
+        if (dist < minDist) {
+          minDist = dist;
+        }
+      }
+    }
+
+    return Math.sqrt(minDist);
+  }
+
+  // Domain warping - distorts noise coordinates
+  domainWarpedNoise(x, y, z, warpStrength = 0.1) {
+    const warpX = x + warpStrength * this.noise(x * 0.1, y * 0.1, z * 0.1);
+    const warpY = y + warpStrength * this.noise((x + 100) * 0.1, (y + 100) * 0.1, z * 0.1);
+    const warpZ = z + warpStrength * this.noise((x + 200) * 0.1, (y + 200) * 0.1, (z + 100) * 0.1);
+
+    return this.noise(warpX, warpY, warpZ);
+  }
+
+  // --- Heightmap Generators ---
+
+  // Generate basic Perlin noise terrain - pure static function
+  static generatePerlinNoise(width, height, scale = 0.01, octaves = 6) {
+    const noise = new PerlinNoise();
+    const data = new Float32Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const value = noise.fbm(x * scale, y * scale, 0, octaves);
+        data[y * width + x] = (value + 1) * 0.5; // Normalize from [-1,1] to [0,1]
+      }
+    }
+    return data;
+  }
+
+  // Generate ridged terrain - pure static function
+  static generateRidgedTerrain(width, height, scale = 0.01, octaves = 6) {
+    const noise = new PerlinNoise();
+    const data = new Float32Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const value = noise.ridgedNoise(x * scale, y * scale, 0, octaves);
+        data[y * width + x] = value;
+      }
+    }
+    return data;
+  }
+
+  // Generate cellular/crater terrain using Voronoi - pure static function
+  static generateCellularTerrain(width, height, scale = 0.02, invert = false) {
+    const noise = new PerlinNoise();
+    const data = new Float32Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let value = noise.voronoiNoise(x, y, scale);
+        value = Math.min(value, 1.0);
+        if (invert) value = 1.0 - value; // For crater-like formations
+        data[y * width + x] = value;
+      }
+    }
+    return data;
+  }
+
+  // Generate billow terrain - pure static function
+  static generateBillowTerrain(width, height, scale = 0.01, octaves = 4) {
+    const noise = new PerlinNoise();
+    const data = new Float32Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const value = noise.billowNoise(x * scale, y * scale, 0, octaves);
+        data[y * width + x] = value;
+      }
+    }
+    return data;
+  }
+
+  // Generate domain-warped terrain - pure static function
+  static generateWarpedTerrain(width, height, scale = 0.01, warpStrength = 30.0) {
+    const noise = new PerlinNoise();
+    const data = new Float32Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const value = noise.domainWarpedNoise(x * scale, y * scale, 0, warpStrength);
+        data[y * width + x] = (value + 1.0) * 0.5; // Normalize to [0, 1]
+      }
+    }
+    return data;
+  }
+
+  // Apply height multiplier to heightmap - pure static function
+  static applyHeightMultiplier(heightmap, multiplier = 1.0) {
+    if (multiplier === 1.0) return heightmap.slice();
+
+    const result = new Float32Array(heightmap.length);
+    for (let i = 0; i < heightmap.length; i++) {
+      result[i] = heightmap[i] * multiplier;
+    }
+    return result;
+  }
+
+  // Apply height smoothing to heightmap - pure static function
+  static applyHeightSmoothing(heightmap, smoothing = 0.0) {
+    if (smoothing === 0.0) return heightmap.slice();
+
+    const result = new Float32Array(heightmap.length);
+    for (let i = 0; i < heightmap.length; i++) {
+      const h = heightmap[i];
+      result[i] = h * (1.0 - smoothing) + (h * 0.5) * smoothing;
+    }
+    return result;
+  }
+
+  // Apply terrain settings (height multiplier and smoothing) - pure static function
+  static applyTerrainSettings(heightmap, heightMultiplier = 1.0, heightSmoothing = 0.0) {
+    let result = heightmap;
+
+    // Apply height multiplier
+    if (heightMultiplier !== 1.0) {
+      result = PerlinNoise.applyHeightMultiplier(result, heightMultiplier);
+    }
+
+    // Apply smoothing
+    if (heightSmoothing > 0.0) {
+      result = PerlinNoise.applyHeightSmoothing(result, heightSmoothing);
+    }
+
+    return result;
+  }
+
+  // Apply terracing effect to create plateau-like formations
+  static applyTerracing(heightmap, width, height, steps = 8) {
+    const out = heightmap.slice();
+
+    for (let i = 0; i < out.length; i++) {
+      const value = out[i];
+      const terraced = Math.floor(value * steps) / steps;
+      out[i] = terraced;
+    }
+    return out;
+  }
+
+  // Combine two heightmaps with various blend modes
+  static combineHeightmaps(map1, map2, width, height, mode = 'add', strength = 0.5) {
+    const out = new Float32Array(width * height);
+
+    for (let i = 0; i < out.length; i++) {
+      const a = map1[i];
+      const b = map2[i];
+
+      switch (mode) {
+        case 'add':
+          out[i] = a + b * strength;
+          break;
+        case 'multiply':
+          out[i] = a * (1 + b * strength);
+          break;
+        case 'overlay':
+          if (a < 0.5) {
+            out[i] = 2 * a * (b * strength + (1 - strength) * 0.5);
+          } else {
+            out[i] = 1 - 2 * (1 - a) * (1 - (b * strength + (1 - strength) * 0.5));
+          }
+          break;
+        case 'subtract':
+          out[i] = Math.max(0, a - b * strength);
+          break;
+        case 'max':
+          out[i] = Math.max(a, b * strength);
+          break;
+        case 'min':
+          out[i] = Math.min(a, b * strength);
+          break;
+        default:
+          out[i] = a + b * strength;
+      }
+    }
+    return out;
+  }
 }

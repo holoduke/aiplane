@@ -8,8 +8,10 @@ export function createControlPanel({
   applyTerrainEffect,
   setTerrainSmoothing,
   setHeightGain,
+  getNoise,
 }) {
   const panel = document.createElement("div");
+  panel.className = "control-panel"; // Add CSS class for easier identification
   panel.style.position = "absolute";
   panel.style.top = "10px";
   panel.style.right = "10px";
@@ -186,20 +188,16 @@ export function createControlPanel({
   });
 
   const detailStrengthLabel = terrain.addLabel(
-    `Detail strength: ${Math.round((app.terrain?.detailStrength || 0) * 100)}%`
+    `Detail strength: ${Math.round(app.detailStrength * 100)}%`
   );
   terrain.addSlider({
     min: 0,
     max: 100,
-    value: Math.round((app.terrain?.detailStrength || 0) * 100),
+    value: Math.round(app.detailStrength * 100),
     onInput: (value) => {
       const strength = value / 100;
       detailStrengthLabel.textContent = `Detail strength: ${value}%`;
-      app.terrain?.updateDetailStrength(strength);
-      // Also update collision detector
-      if (app.game && app.game.collisionDetector) {
-        app.game.collisionDetector.setDetailStrength(strength);
-      }
+      app.setDetailStrength(strength);
     },
   });
 
@@ -240,7 +238,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.terrainLevels = Math.max(2, Math.min(32, Math.round(value)));
       lodLabel.textContent = `LOD levels: ${app.terrainLevels}`;
-      createTerrain();
+      createTerrain(); // createTerrain now automatically applies all terrain settings
       applyShaderEnvironment(app.terrain.activeShaderIndex);
     },
   });
@@ -256,7 +254,7 @@ export function createControlPanel({
     onInput: (value) => {
       app.terrainResolution = Math.max(8, Math.round(value / 16) * 16);
       tileResolutionLabel.textContent = `Tile resolution: ${app.terrainResolution}`;
-      createTerrain();
+      createTerrain(); // createTerrain now automatically applies all terrain settings
       applyShaderEnvironment(app.terrain.activeShaderIndex);
     },
   });
@@ -398,6 +396,131 @@ export function createControlPanel({
       smoothLabel.textContent = `Terrain Smoothing: ${value} passes`;
       if (value > 0) {
         applyTerrainEffect("smooth", { passes: value });
+      }
+    },
+  });
+
+  // Advanced terrain generation label
+  const advancedLabel = document.createElement("div");
+  advancedLabel.textContent = "Advanced Terrain Generation:";
+  advancedLabel.style.cssText = `
+    font-size: 11px;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    opacity: 0.8;
+  `;
+  terrainGenerator.body.appendChild(advancedLabel);
+
+  // Ridged Terrain Button
+  const ridgedButton = document.createElement("div");
+  ridgedButton.textContent = "Generate Ridged Terrain";
+  ridgedButton.style.cssText = `
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 8px;
+    margin: 2px 0;
+    background-color: rgba(255, 193, 7, 0.6);
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: center;
+    transition: background-color 0.2s;
+  `;
+  ridgedButton.addEventListener("mouseover", () => {
+    ridgedButton.style.backgroundColor = "rgba(255, 193, 7, 0.8)";
+  });
+  ridgedButton.addEventListener("mouseout", () => {
+    ridgedButton.style.backgroundColor = "rgba(255, 193, 7, 0.6)";
+  });
+  ridgedButton.addEventListener("click", () => {
+    applyTerrainEffect("ridged", { scale: 0.008, octaves: 6 });
+  });
+  terrainGenerator.body.appendChild(ridgedButton);
+
+  // Cellular/Crater Terrain Button
+  const cellularButton = document.createElement("div");
+  cellularButton.textContent = "Generate Cellular Terrain";
+  cellularButton.style.cssText = `
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 8px;
+    margin: 2px 0;
+    background-color: rgba(156, 39, 176, 0.6);
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: center;
+    transition: background-color 0.2s;
+  `;
+  cellularButton.addEventListener("mouseover", () => {
+    cellularButton.style.backgroundColor = "rgba(156, 39, 176, 0.8)";
+  });
+  cellularButton.addEventListener("mouseout", () => {
+    cellularButton.style.backgroundColor = "rgba(156, 39, 176, 0.6)";
+  });
+  cellularButton.addEventListener("click", () => {
+    applyTerrainEffect("cellular", { scale: 0.015, invert: false });
+  });
+  terrainGenerator.body.appendChild(cellularButton);
+
+  // Billow Terrain Button
+  const billowButton = document.createElement("div");
+  billowButton.textContent = "Generate Billow Terrain";
+  billowButton.style.cssText = `
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 8px;
+    margin: 2px 0;
+    background-color: rgba(3, 169, 244, 0.6);
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: center;
+    transition: background-color 0.2s;
+  `;
+  billowButton.addEventListener("mouseover", () => {
+    billowButton.style.backgroundColor = "rgba(3, 169, 244, 0.8)";
+  });
+  billowButton.addEventListener("mouseout", () => {
+    billowButton.style.backgroundColor = "rgba(3, 169, 244, 0.6)";
+  });
+  billowButton.addEventListener("click", () => {
+    applyTerrainEffect("billow", { scale: 0.012, octaves: 4 });
+  });
+  terrainGenerator.body.appendChild(billowButton);
+
+  // Domain Warped Terrain Button
+  const warpedButton = document.createElement("div");
+  warpedButton.textContent = "Generate Warped Terrain";
+  warpedButton.style.cssText = `
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 8px;
+    margin: 2px 0;
+    background-color: rgba(76, 175, 80, 0.6);
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: center;
+    transition: background-color 0.2s;
+  `;
+  warpedButton.addEventListener("mouseover", () => {
+    warpedButton.style.backgroundColor = "rgba(76, 175, 80, 0.8)";
+  });
+  warpedButton.addEventListener("mouseout", () => {
+    warpedButton.style.backgroundColor = "rgba(76, 175, 80, 0.6)";
+  });
+  warpedButton.addEventListener("click", () => {
+    applyTerrainEffect("warped", { scale: 0.008, warpStrength: 25.0 });
+  });
+  terrainGenerator.body.appendChild(warpedButton);
+
+  // Terracing Slider
+  const terracingLabel = terrainGenerator.addLabel("Terracing: 0 steps");
+  terrainGenerator.addSlider({
+    min: 0,
+    max: 20,
+    value: 0,
+    onInput: (value) => {
+      terracingLabel.textContent = `Terracing: ${value} steps`;
+      if (value > 1) {
+        applyTerrainEffect("terracing", { steps: value });
       }
     },
   });

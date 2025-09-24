@@ -506,7 +506,7 @@ export class Player {
     const cameraHeight = 10; // Lower height to be more behind than above
 
     // Smooth camera rotation following with lag
-    const rotationFollowRate = 2.0; // Slower = more lag
+    const rotationFollowRate = 10.0; // Slower = more lag
     const rotationAlpha = 1 - Math.exp(-rotationFollowRate * deltaTime);
     this.cameraRotation.slerp(this.mesh.quaternion, rotationAlpha);
 
@@ -1029,7 +1029,9 @@ export class Player {
               300,
               9999
             ); // Instant kill damage
-            console.log(`💣💥 Bomb terrain impact hit ${bombHits.length} enemies!`);
+            console.log(
+              `💣💥 Bomb terrain impact hit ${bombHits.length} enemies!`
+            );
           }
         } else {
           // Move bomb forward only if no collision
