@@ -104,7 +104,7 @@ class TerrainApp {
     this.currentSunIntensity = 1.0;
     this.sunWarmth = 0.75;
     this.sunLightColor = new THREE.Color(1.0, 0.85, 0.65);
-    this.ambientStrength = 0.3;
+    this.ambientStrength = 0.6;
     this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
     this.ambientDirection = new THREE.Vector3(1, 0, 0);
     this.normalSmoothFactor = 0.65;
@@ -173,7 +173,7 @@ class TerrainApp {
     this.texture = texture;
     this.geometry = geometry;
     this.heightSmoothStrength = 0.02;
-    this.heightGain = 0.84;
+    this.heightGain = 0.74;
     this.detailStrength = 0.5; // Default detail strength (50%)
     this.skyKeyframes = SKY_KEYFRAMES;
 
@@ -212,13 +212,15 @@ class TerrainApp {
     setNoiseHeightGain(this.heightGain);
 
     // Load generated heightmap and create terrain
-    this.loadGeneratedHeightmap().then(() => {
-      this.createTerrain();
-    }).catch(() => {
-      // Fallback to procedural terrain if heightmap loading fails
-      console.log('🔄 Falling back to procedural terrain');
-      this.createTerrain();
-    });
+    this.loadGeneratedHeightmap()
+      .then(() => {
+        this.createTerrain();
+      })
+      .catch(() => {
+        // Fallback to procedural terrain if heightmap loading fails
+        console.log("🔄 Falling back to procedural terrain");
+        this.createTerrain();
+      });
 
     this.setupPostProcessing();
     this.setupShadows();
@@ -287,17 +289,19 @@ class TerrainApp {
 
   async loadGeneratedHeightmap() {
     try {
-      console.log('🗺️ Loading generated heightmap...');
-      this.generatedHeightTexture = await this.createTextureFromBin('tools/heightmap-generator/output/heightmap_center.bin');
-      console.log('✅ Generated heightmap loaded');
+      console.log("🗺️ Loading generated heightmap...");
+      this.generatedHeightTexture = await this.createTextureFromBin(
+        "tools/heightmap-generator/output/heightmap_center.bin"
+      );
+      console.log("✅ Generated heightmap loaded");
     } catch (error) {
-      console.error('❌ Failed to load generated heightmap:', error);
+      console.error("❌ Failed to load generated heightmap:", error);
       this.generatedHeightTexture = null;
     }
   }
 
   async createTextureFromBin(path) {
-    const url = path.startsWith('/') ? path : `/${path}`;
+    const url = path.startsWith("/") ? path : `/${path}`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -307,13 +311,17 @@ class TerrainApp {
     const arrayBuffer = await response.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
 
-    if (uint8Array.length !== 65536) { // 256x256
-      throw new Error(`Invalid heightmap size: ${uint8Array.length} bytes (expected 65536)`);
+    if (uint8Array.length !== 65536) {
+      // 256x256
+      throw new Error(
+        `Invalid heightmap size: ${uint8Array.length} bytes (expected 65536)`
+      );
     }
 
     const texture = new THREE.DataTexture(
       uint8Array,
-      256, 256,
+      256,
+      256,
       THREE.RedFormat,
       THREE.UnsignedByteType
     );
@@ -355,9 +363,9 @@ class TerrainApp {
     const heightTexture = this.generatedHeightTexture || getNoise();
 
     if (this.generatedHeightTexture) {
-      console.log('🎯 Creating terrain with generated heightmap (.bin file)');
+      console.log("🎯 Creating terrain with generated heightmap (.bin file)");
     } else {
-      console.log('🔄 Creating terrain with procedural noise (fallback)');
+      console.log("🔄 Creating terrain with procedural noise (fallback)");
     }
 
     this.terrain = new Terrain(
@@ -404,7 +412,9 @@ class TerrainApp {
       this.game.collisionDetector.setDetailStrength(this.detailStrength);
       this.game.collisionDetector.setHeightMultiplier(this.heightGain);
       this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
-      console.log('🔗 Connected heightmap texture to collision detector with all settings');
+      console.log(
+        "🔗 Connected heightmap texture to collision detector with all settings"
+      );
     }
 
     // Apply shader environment after terrain is created
@@ -522,7 +532,7 @@ class TerrainApp {
     // Regenerate terrain with current settings when resolution changes
     regenerateNoise({
       heightGain: this.heightGain,
-      smoothing: this.heightSmoothStrength
+      smoothing: this.heightSmoothStrength,
     });
 
     // Clear heightmap data since we have new terrain
@@ -534,13 +544,19 @@ class TerrainApp {
     // Reset effect parameters
     this.effectParameters = {
       thermal: { iterations: 0, talus: 0.01 },
-      hydraulic: { droplets: 0, inertia: 0.05, capacity: 4, deposition: 0.1, erosion: 0.3 },
+      hydraulic: {
+        droplets: 0,
+        inertia: 0.05,
+        capacity: 4,
+        deposition: 0.1,
+        erosion: 0.3,
+      },
       smooth: { passes: 0 },
-      terracing: { steps: 1 }
+      terracing: { steps: 1 },
     };
 
     // Initialize new master heightmap from the resized terrain
-    this.initializeMasterHeightmap('procedural');
+    this.initializeMasterHeightmap("procedural");
 
     // Apply stored detail strength to the newly resized terrain
     this.terrain?.updateDetailStrength(this.detailStrength);
@@ -554,7 +570,9 @@ class TerrainApp {
       this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
     }
 
-    console.log(`🔧 Noise resolution changed to ${applied}x${applied} with all settings applied`);
+    console.log(
+      `🔧 Noise resolution changed to ${applied}x${applied} with all settings applied`
+    );
   }
 
   setShadowEnabled(value) {
@@ -1151,7 +1169,8 @@ class TerrainApp {
       createTerrain: () => this.createTerrain(),
       generateProceduralTerrain: () => this.generateProceduralTerrain(),
       loadDefaultHeightmap: () => this.loadDefaultHeightmap(),
-      applyTerrainEffect: (effectType, parameters) => this.applyTerrainEffect(effectType, parameters),
+      applyTerrainEffect: (effectType, parameters) =>
+        this.applyTerrainEffect(effectType, parameters),
       setTerrainSmoothing: (value) => this.setTerrainSmoothing(value),
       setHeightGain: (value) => this.setHeightGain(value),
       setDetailStrength: (value) => this.setDetailStrength(value),
@@ -1276,15 +1295,16 @@ class TerrainApp {
 
       // Check if click target is a UI element (control panel, sliders, buttons)
       const target = event.target;
-      if (target && (
-        target.closest('.control-panel') ||
-        target.closest('.slider') ||
-        target.closest('[style*="cursor: pointer"]') ||
-        target.matches('input') ||
-        target.matches('button') ||
-        target.matches('[role="slider"]') ||
-        target.tagName === 'DIV' && target.style.cursor === 'pointer'
-      )) {
+      if (
+        target &&
+        (target.closest(".control-panel") ||
+          target.closest(".slider") ||
+          target.closest('[style*="cursor: pointer"]') ||
+          target.matches("input") ||
+          target.matches("button") ||
+          target.matches('[role="slider"]') ||
+          (target.tagName === "DIV" && target.style.cursor === "pointer"))
+      ) {
         // Don't lock pointer when clicking on UI elements
         return;
       }
@@ -1722,9 +1742,15 @@ class TerrainApp {
     // Reset effect parameters
     this.effectParameters = {
       thermal: { iterations: 0, talus: 0.01 },
-      hydraulic: { droplets: 0, inertia: 0.05, capacity: 4, deposition: 0.1, erosion: 0.3 },
+      hydraulic: {
+        droplets: 0,
+        inertia: 0.05,
+        capacity: 4,
+        deposition: 0.1,
+        erosion: 0.3,
+      },
       smooth: { passes: 0 },
-      terracing: { steps: 1 }
+      terracing: { steps: 1 },
     };
     this.baseHeightmapType = null; // Track the source: 'procedural', 'generated', or 'custom'
     this.heightmapWidth = null;
@@ -1733,9 +1759,15 @@ class TerrainApp {
     // Effect parameters for reference-based rebuilding
     this.effectParameters = {
       thermal: { iterations: 0, talus: 0.01 },
-      hydraulic: { droplets: 0, inertia: 0.05, capacity: 4, deposition: 0.1, erosion: 0.3 },
+      hydraulic: {
+        droplets: 0,
+        inertia: 0.05,
+        capacity: 4,
+        deposition: 0.1,
+        erosion: 0.3,
+      },
       smooth: { passes: 0 },
-      terracing: { steps: 1 }
+      terracing: { steps: 1 },
     };
 
     // Resize terrain texture to current noise resolution
@@ -1745,7 +1777,7 @@ class TerrainApp {
     // Regenerate noise with current settings including height gain
     regenerateNoise({
       heightGain: this.heightGain,
-      smoothing: this.heightSmoothStrength
+      smoothing: this.heightSmoothStrength,
     });
 
     // Recreate terrain with procedural noise
@@ -1753,7 +1785,7 @@ class TerrainApp {
     this.applyShaderEnvironment(this.terrain.activeShaderIndex);
 
     // Initialize master heightmap from the newly created procedural terrain
-    this.initializeMasterHeightmap('procedural');
+    this.initializeMasterHeightmap("procedural");
 
     // Update collision detector with the procedural texture
     const proceduralTexture = getNoise();
@@ -1763,13 +1795,21 @@ class TerrainApp {
       this.game.collisionDetector.setDetailStrength(this.detailStrength);
       this.game.collisionDetector.setHeightMultiplier(this.heightGain);
       this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
-      console.log('🎯 Updated collision detector with procedural heightmap and all terrain parameters');
+      console.log(
+        "🎯 Updated collision detector with procedural heightmap and all terrain parameters"
+      );
     }
 
     // Apply stored detail strength to the newly created terrain
     this.terrain?.updateDetailStrength(this.detailStrength);
 
-    console.log(`🌋 Generated new procedural terrain (${this.noiseResolution}x${this.noiseResolution}) with height gain: ${this.heightGain}x, smoothing: ${Math.round(this.heightSmoothStrength * 100)}%`);
+    console.log(
+      `🌋 Generated new procedural terrain (${this.noiseResolution}x${
+        this.noiseResolution
+      }) with height gain: ${this.heightGain}x, smoothing: ${Math.round(
+        this.heightSmoothStrength * 100
+      )}%`
+    );
   }
 
   async loadDefaultHeightmap() {
@@ -1782,27 +1822,39 @@ class TerrainApp {
       this.applyShaderEnvironment(this.terrain.activeShaderIndex);
 
       // Update collision detector with the .bin file heightmap
-      if (this.game && this.game.collisionDetector && this.generatedHeightTexture) {
-        this.game.collisionDetector.setHeightmapTexture(this.generatedHeightTexture);
-        console.log('🎯 Updated collision detector with .bin heightmap');
+      if (
+        this.game &&
+        this.game.collisionDetector &&
+        this.generatedHeightTexture
+      ) {
+        this.game.collisionDetector.setHeightmapTexture(
+          this.generatedHeightTexture
+        );
+        console.log("🎯 Updated collision detector with .bin heightmap");
       }
 
-      console.log('🗺️ Loaded default heightmap (.bin file)');
+      console.log("🗺️ Loaded default heightmap (.bin file)");
     } catch (error) {
-      console.error('❌ Failed to load default heightmap:', error);
+      console.error("❌ Failed to load default heightmap:", error);
     }
   }
 
   // Store original heightmap for terrain effects
   storeOriginalHeightmap() {
     if (this.generatedHeightTexture) {
-      console.log('⚠️ Original heightmap storage only works with procedural terrain.');
+      console.log(
+        "⚠️ Original heightmap storage only works with procedural terrain."
+      );
       return;
     }
 
     const terrainTexture = getTerrainTexture();
-    if (!terrainTexture || !terrainTexture.texture || !terrainTexture.texture.image) {
-      console.log('⚠️ No procedural terrain texture available');
+    if (
+      !terrainTexture ||
+      !terrainTexture.texture ||
+      !terrainTexture.texture.image
+    ) {
+      console.log("⚠️ No procedural terrain texture available");
       return;
     }
 
@@ -1813,12 +1865,14 @@ class TerrainApp {
     }
     this.heightmapWidth = terrainTexture.texture.image.width;
     this.heightmapHeight = terrainTexture.texture.image.height;
-    console.log('📸 Stored original heightmap for terrain effects');
+    console.log("📸 Stored original heightmap for terrain effects");
   }
 
   storeRawHeightmap() {
     if (this.generatedHeightTexture) {
-      console.log('⚠️ Raw heightmap storage only works with procedural terrain.');
+      console.log(
+        "⚠️ Raw heightmap storage only works with procedural terrain."
+      );
       return;
     }
 
@@ -1834,23 +1888,31 @@ class TerrainApp {
     this.heightmapWidth = width;
     this.heightmapHeight = height;
 
-    console.log('📸 Stored raw heightmap (without settings) for terrain effects');
+    console.log(
+      "📸 Stored raw heightmap (without settings) for terrain effects"
+    );
   }
 
   // Centralized heightmap management - single source of truth
-  initializeMasterHeightmap(type = 'procedural') {
+  initializeMasterHeightmap(type = "procedural") {
     if (this.generatedHeightTexture) {
       // Initialize from .bin file
-      console.log('🎯 Initializing master heightmap from generated texture (.bin file)');
-      this.baseHeightmapType = 'generated';
+      console.log(
+        "🎯 Initializing master heightmap from generated texture (.bin file)"
+      );
+      this.baseHeightmapType = "generated";
       // TODO: Extract data from this.generatedHeightTexture
       return;
     }
 
     // Initialize from procedural noise
     const terrainTexture = getTerrainTexture();
-    if (!terrainTexture || !terrainTexture.texture || !terrainTexture.texture.image) {
-      console.warn('⚠️ No terrain texture available for master heightmap');
+    if (
+      !terrainTexture ||
+      !terrainTexture.texture ||
+      !terrainTexture.texture.image
+    ) {
+      console.warn("⚠️ No terrain texture available for master heightmap");
       return;
     }
 
@@ -1868,13 +1930,15 @@ class TerrainApp {
     this.masterHeightmap = this.baseHeightmap.slice();
 
     this.baseHeightmapType = type;
-    console.log(`📋 Initialized base & master heightmap (${this.heightmapWidth}x${this.heightmapHeight}) from ${type} source`);
+    console.log(
+      `📋 Initialized base & master heightmap (${this.heightmapWidth}x${this.heightmapHeight}) from ${type} source`
+    );
   }
 
   // Rebuild master heightmap from base + all current effect parameters
   rebuildMasterHeightmap() {
     if (!this.baseHeightmap) {
-      console.warn('⚠️ No base heightmap available for rebuilding');
+      console.warn("⚠️ No base heightmap available for rebuilding");
       return false;
     }
 
@@ -1889,19 +1953,32 @@ class TerrainApp {
 
     // Apply thermal erosion
     if (params.thermal.iterations > 0) {
-      console.log(`🔥 Applying thermal erosion (${params.thermal.iterations} iterations)`);
+      console.log(
+        `🔥 Applying thermal erosion (${params.thermal.iterations} iterations)`
+      );
       workingHeightmap = PerlinNoise.thermalErosion(
-        workingHeightmap, width, height, params.thermal.iterations, params.thermal.talus
+        workingHeightmap,
+        width,
+        height,
+        params.thermal.iterations,
+        params.thermal.talus
       );
     }
 
     // Apply hydraulic erosion
     if (params.hydraulic.droplets > 0) {
-      console.log(`💧 Applying hydraulic erosion (${params.hydraulic.droplets} droplets)`);
+      console.log(
+        `💧 Applying hydraulic erosion (${params.hydraulic.droplets} droplets)`
+      );
       workingHeightmap = PerlinNoise.hydraulicErosion(
-        workingHeightmap, width, height, params.hydraulic.droplets,
-        params.hydraulic.inertia, params.hydraulic.capacity,
-        params.hydraulic.deposition, params.hydraulic.erosion
+        workingHeightmap,
+        width,
+        height,
+        params.hydraulic.droplets,
+        params.hydraulic.inertia,
+        params.hydraulic.capacity,
+        params.hydraulic.deposition,
+        params.hydraulic.erosion
       );
     }
 
@@ -1909,7 +1986,10 @@ class TerrainApp {
     if (params.smooth.passes > 0) {
       console.log(`✨ Applying smoothing (${params.smooth.passes} passes)`);
       workingHeightmap = PerlinNoise.smoothHeightmap(
-        workingHeightmap, width, height, params.smooth.passes
+        workingHeightmap,
+        width,
+        height,
+        params.smooth.passes
       );
     }
 
@@ -1917,52 +1997,75 @@ class TerrainApp {
     if (params.terracing.steps > 1) {
       console.log(`🪜 Applying terracing (${params.terracing.steps} steps)`);
       workingHeightmap = PerlinNoise.applyTerracing(
-        workingHeightmap, width, height, params.terracing.steps
+        workingHeightmap,
+        width,
+        height,
+        params.terracing.steps
       );
     }
 
     // Update master heightmap with final result
     this.masterHeightmap = workingHeightmap;
-    console.log('✅ Rebuilt master heightmap from base + all effects');
+    console.log("✅ Rebuilt master heightmap from base + all effects");
     return true;
   }
 
   // Apply an effect by updating parameters and rebuilding (reference-based)
   applyHeightmapEffect(effectType, parameters = {}) {
     if (!this.baseHeightmap) {
-      console.warn('⚠️ No base heightmap available for effect application');
+      console.warn("⚠️ No base heightmap available for effect application");
       return false;
     }
 
     // Handle terrain generation cases (replace base heightmap entirely)
-    if (['ridged', 'cellular', 'billow', 'warped'].includes(effectType)) {
+    if (["ridged", "cellular", "billow", "warped"].includes(effectType)) {
       const width = this.heightmapWidth;
       const height = this.heightmapHeight;
       let newHeightmap;
 
       switch (effectType) {
-        case 'ridged':
-          console.log(`🏔️ Generating ridged terrain (replacing base heightmap)...`);
+        case "ridged":
+          console.log(
+            `🏔️ Generating ridged terrain (replacing base heightmap)...`
+          );
           newHeightmap = PerlinNoise.generateRidgedTerrain(
-            width, height, parameters.scale || 0.01, parameters.octaves || 6
+            width,
+            height,
+            parameters.scale || 0.01,
+            parameters.octaves || 6
           );
           break;
-        case 'cellular':
-          console.log(`🕳️ Generating cellular terrain (replacing base heightmap)...`);
+        case "cellular":
+          console.log(
+            `🕳️ Generating cellular terrain (replacing base heightmap)...`
+          );
           newHeightmap = PerlinNoise.generateCellularTerrain(
-            width, height, parameters.scale || 0.02, parameters.invert || false
+            width,
+            height,
+            parameters.scale || 0.02,
+            parameters.invert || false
           );
           break;
-        case 'billow':
-          console.log(`☁️ Generating billow terrain (replacing base heightmap)...`);
+        case "billow":
+          console.log(
+            `☁️ Generating billow terrain (replacing base heightmap)...`
+          );
           newHeightmap = PerlinNoise.generateBillowTerrain(
-            width, height, parameters.scale || 0.01, parameters.octaves || 4
+            width,
+            height,
+            parameters.scale || 0.01,
+            parameters.octaves || 4
           );
           break;
-        case 'warped':
-          console.log(`🌊 Generating domain-warped terrain (replacing base heightmap)...`);
+        case "warped":
+          console.log(
+            `🌊 Generating domain-warped terrain (replacing base heightmap)...`
+          );
           newHeightmap = PerlinNoise.generateWarpedTerrain(
-            width, height, parameters.scale || 0.01, parameters.warpStrength || 30.0
+            width,
+            height,
+            parameters.scale || 0.01,
+            parameters.warpStrength || 30.0
           );
           break;
       }
@@ -1972,29 +2075,36 @@ class TerrainApp {
       // Reset all effect parameters when generating new terrain
       this.effectParameters = {
         thermal: { iterations: 0, talus: 0.01 },
-        hydraulic: { droplets: 0, inertia: 0.05, capacity: 4, deposition: 0.1, erosion: 0.3 },
+        hydraulic: {
+          droplets: 0,
+          inertia: 0.05,
+          capacity: 4,
+          deposition: 0.1,
+          erosion: 0.3,
+        },
         smooth: { passes: 0 },
-        terracing: { steps: 1 }
+        terracing: { steps: 1 },
       };
       this.baseHeightmapType = effectType;
     } else {
       // Handle erosion/effect cases - update parameters and rebuild
       switch (effectType) {
-        case 'thermal':
+        case "thermal":
           this.effectParameters.thermal.iterations = parameters.iterations || 0;
           this.effectParameters.thermal.talus = parameters.talus || 0.01;
           break;
-        case 'hydraulic':
+        case "hydraulic":
           this.effectParameters.hydraulic.droplets = parameters.droplets || 0;
           this.effectParameters.hydraulic.inertia = parameters.inertia || 0.05;
           this.effectParameters.hydraulic.capacity = parameters.capacity || 4;
-          this.effectParameters.hydraulic.deposition = parameters.deposition || 0.1;
+          this.effectParameters.hydraulic.deposition =
+            parameters.deposition || 0.1;
           this.effectParameters.hydraulic.erosion = parameters.erosion || 0.3;
           break;
-        case 'smooth':
+        case "smooth":
           this.effectParameters.smooth.passes = parameters.passes || 0;
           break;
-        case 'terracing':
+        case "terracing":
           this.effectParameters.terracing.steps = parameters.steps || 1;
           break;
         default:
@@ -2010,39 +2120,55 @@ class TerrainApp {
   // Update terrain from master heightmap with current settings
   updateTerrainFromMaster() {
     if (!this.masterHeightmap) {
-      console.warn('⚠️ No master heightmap available');
+      console.warn("⚠️ No master heightmap available");
       return;
     }
 
     // Apply current settings (height multiplier, smoothing) to master data for display
     const displayHeightmap = PerlinNoise.applyTerrainSettings(
-      this.masterHeightmap, this.heightGain, this.heightSmoothStrength
+      this.masterHeightmap,
+      this.heightGain,
+      this.heightSmoothStrength
     );
 
     // Update terrain texture
-    this.updateTerrainTextureFromHeightmap(displayHeightmap, this.heightmapWidth, this.heightmapHeight);
+    this.updateTerrainTextureFromHeightmap(
+      displayHeightmap,
+      this.heightmapWidth,
+      this.heightmapHeight
+    );
 
     // Recreate terrain
     this.createTerrain();
     this.applyShaderEnvironment(this.terrain.activeShaderIndex);
 
-    console.log('🔄 Updated terrain from master heightmap with current settings');
+    console.log(
+      "🔄 Updated terrain from master heightmap with current settings"
+    );
   }
 
   // Helper function to apply current terrain settings using static methods
   applyTerrainSettings(heightmap, width, height) {
-    console.log(`📏 Applying terrain settings: height gain ${this.heightGain}, smoothing ${this.heightSmoothStrength}`);
-    return PerlinNoise.applyTerrainSettings(heightmap, this.heightGain, this.heightSmoothStrength);
+    console.log(
+      `📏 Applying terrain settings: height gain ${this.heightGain}, smoothing ${this.heightSmoothStrength}`
+    );
+    return PerlinNoise.applyTerrainSettings(
+      heightmap,
+      this.heightGain,
+      this.heightSmoothStrength
+    );
   }
 
   // Reapply current terrain settings to raw heightmap and update the texture
   reapplyTerrainSettings() {
     if (!this.rawHeightmap || !this.heightmapWidth || !this.heightmapHeight) {
-      console.warn('⚠️ No raw heightmap data available for settings reapplication');
+      console.warn(
+        "⚠️ No raw heightmap data available for settings reapplication"
+      );
       return;
     }
 
-    console.log('🔄 Reapplying terrain settings to raw heightmap data...');
+    console.log("🔄 Reapplying terrain settings to raw heightmap data...");
 
     // Apply current settings to raw data
     const processedHeightmap = this.applyTerrainSettings(
@@ -2052,7 +2178,11 @@ class TerrainApp {
     );
 
     // Update the terrain texture with processed data
-    this.updateTerrainTextureFromHeightmap(processedHeightmap, this.heightmapWidth, this.heightmapHeight);
+    this.updateTerrainTextureFromHeightmap(
+      processedHeightmap,
+      this.heightmapWidth,
+      this.heightmapHeight
+    );
 
     // Update collision detector
     if (this.game && this.game.collisionDetector) {
@@ -2067,38 +2197,45 @@ class TerrainApp {
   updateTerrainTextureFromHeightmap(heightmap, width, height) {
     const terrainTexture = getTerrainTexture();
     if (!terrainTexture || !terrainTexture.texture) {
-      console.warn('⚠️ No terrain texture available for update');
+      console.warn("⚠️ No terrain texture available for update");
       return;
     }
 
     // Ensure texture dimensions match
-    if (terrainTexture.texture.image.width !== width || terrainTexture.texture.image.height !== height) {
+    if (
+      terrainTexture.texture.image.width !== width ||
+      terrainTexture.texture.image.height !== height
+    ) {
       terrainTexture.resize(width, height);
     }
 
     // Convert heightmap data to texture format (0-255 range)
     const textureData = terrainTexture.texture.image.data;
     for (let i = 0; i < heightmap.length; i++) {
-      textureData[i] = Math.round(THREE.MathUtils.clamp(heightmap[i], 0, 1) * 255);
+      textureData[i] = Math.round(
+        THREE.MathUtils.clamp(heightmap[i], 0, 1) * 255
+      );
     }
 
     // Mark texture as needing update
     terrainTexture.texture.needsUpdate = true;
 
-    console.log('🖼️ Updated terrain texture from heightmap data');
+    console.log("🖼️ Updated terrain texture from heightmap data");
   }
 
   // Apply terrain processing effects using centralized heightmap management
   applyTerrainEffect(effectType, parameters = {}) {
     // Only works with procedural terrain
     if (this.generatedHeightTexture) {
-      console.log('⚠️ Terrain effects only work with procedural terrain. Generate terrain first.');
+      console.log(
+        "⚠️ Terrain effects only work with procedural terrain. Generate terrain first."
+      );
       return;
     }
 
     // Initialize base & master heightmap if not already done
     if (!this.baseHeightmap) {
-      this.initializeMasterHeightmap('procedural');
+      this.initializeMasterHeightmap("procedural");
     }
 
     // Apply the effect using reference-based rebuilding

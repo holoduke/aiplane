@@ -6,6 +6,7 @@ export class InputManager {
     this.mouseY = 0
     this.isMouseLocked = false
     this.game = null // Will be set by Game class
+    this.intentionalUnlock = false // Flag to prevent pause when we unlock for menu
 
     // Touch controls - virtual joystick style
     this.touchActive = false
@@ -49,6 +50,12 @@ export class InputManager {
           document.exitPointerLock()
         }
         break
+      case 'KeyM':
+        // Toggle menu with M key - unlock mouse and show control panel without pause screen
+        if (this.game && this.game.uiManager) {
+          this.toggleMenu()
+        }
+        break
       case 'ShiftLeft':
       case 'ShiftRight':
         // Toggle afterburner
@@ -82,8 +89,15 @@ export class InputManager {
     this.isMouseLocked = document.pointerLockElement === document.body
 
     // If mouse lock was lost (and we were previously locked), pause the game (except in explore/float mode)
+    // BUT only if it wasn't an intentional unlock for the menu
     if (wasMouseLocked && !this.isMouseLocked && this.game && this.game.isGameActive() && this.game.gameMode !== "float") {
-      this.game.pauseGame()
+      if (!this.intentionalUnlock) {
+        this.game.pauseGame()
+      } else {
+        // Reset the flag after handling intentional unlock
+        console.log("🔓 Intentional unlock for menu - not pausing game")
+        this.intentionalUnlock = false
+      }
     }
   }
 
@@ -268,6 +282,47 @@ export class InputManager {
     this.activeTouches.clear()
     this.steerTouchId = null
     console.log('🎮 Input disabled')
+  }
+
+  toggleMenu() {
+    // Toggle the control panel (menu) and handle mouse lock
+    if (this.game && this.game.uiManager) {
+      // Get the control panel
+      const controlPanel = this.game.app.controlPanel?.panel;
+
+      if (!controlPanel) {
+        console.warn("⚠️ Control panel not found");
+        return;
+      }
+
+      const isVisible = controlPanel.style.display !== "none";
+
+      if (isVisible) {
+        // Hide menu and re-lock mouse if game is active
+        controlPanel.style.display = "none";
+        console.log("🍔 Menu hidden with M key");
+
+        // Re-lock mouse if we're in game and not paused
+        if (this.game.isGameActive() && !this.game.gamePaused) {
+          // Small delay to ensure the keyup event is processed
+          setTimeout(() => {
+            if (document.body.requestPointerLock) {
+              document.body.requestPointerLock();
+            }
+          }, 100);
+        }
+      } else {
+        // Show menu and unlock mouse
+        if (this.isMouseLocked) {
+          this.intentionalUnlock = true; // Set flag BEFORE unlocking
+          document.exitPointerLock();
+        }
+
+        controlPanel.style.display = "block";
+        controlPanel.style.zIndex = "1002"; // Above other elements
+        console.log("🍔 Menu shown with M key");
+      }
+    }
   }
 
   dispose() {

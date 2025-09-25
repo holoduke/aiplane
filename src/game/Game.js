@@ -101,6 +101,7 @@ export class Game {
     // Create player
     this.player = new Player(this.scene, this.camera, this.collisionDetector);
 
+
     // Create input manager with player reference
     this.inputManager = new InputManager(this.player);
     this.inputManager.game = this; // Set game reference for pause functionality
@@ -216,6 +217,7 @@ export class Game {
     // No player in float mode
     this.player = null;
   }
+
 
   setupPlayCamera() {
     // Camera will be managed by the player in play mode
