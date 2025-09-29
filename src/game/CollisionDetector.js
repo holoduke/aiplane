@@ -45,51 +45,83 @@ export class CollisionDetector {
       return sampleHeight(x, y);
     }
 
-    // Convert world coordinates to texture coordinates (same as shader)
-    const st_x = x / 1024.0;
-    const st_y = y / 1024.0;
+    const image = this.heightmapTexture.image;
+    const data = image.data;
+    const width = image.width || 256;
+    const height = image.height || 256;
 
-    // Convert to pixel coordinates
-    const width = this.heightmapTexture.image.width || 256;
-    const height = this.heightmapTexture.image.height || 256;
-
-    // Clamp to texture bounds (wrap the coordinates)
-    const px = Math.floor((st_x % 1.0 + 1.0) % 1.0 * width) % width;
-    const py = Math.floor((st_y % 1.0 + 1.0) % 1.0 * height) % height;
-
-    // Sample from texture data
-    if (this.heightmapTexture.image.data) {
-      const index = py * width + px;
-      const heightValue = this.heightmapTexture.image.data[index] / 255.0; // Normalize 0-1
-
-      // Apply same height scaling as shader with detail strength
-      let h = 1024.0 * heightValue;
-      // Add detail octaves if detailStrength > 0 (simplified single-texture approximation)
-      if (this.detailStrength && this.detailStrength > 0) {
-        h += this.detailStrength * 64.0 * heightValue; // Simplified - can't multi-sample from JS
-        h += this.detailStrength * 4.0 * heightValue;
-      }
-
-      // Apply height multiplier (same as shader)
-      h *= (this.heightMultiplier || 1.0);
-
-      // Apply height smoothing (same as shader)
-      if (this.heightSmoothing && this.heightSmoothing > 0.0) {
-        h = h * (1.0 - this.heightSmoothing) + (h * 0.5) * this.heightSmoothing; // Linear interpolation
-      }
-
-      const finalHeight = h * h / 2000.0; // Same squaring as shader
-
-      // Debug logging for collision detection
-      if (Math.random() < 0.01) { // Only log occasionally to avoid spam
-        console.log(`[CollisionDetector] x=${x.toFixed(2)}, y=${y.toFixed(2)}, heightValue=${heightValue.toFixed(3)}, finalHeight=${finalHeight.toFixed(2)}`);
-      }
-
-      return finalHeight;
+    if (!data || width <= 0 || height <= 0) {
+      return sampleHeight(x, y);
     }
 
-    // Fallback to procedural
-    return sampleHeight(x, y);
+    const worldSize = 1024.0; // Matches shader assumption
+    const detailStrength = this.detailStrength ?? 1.0;
+    const heightMultiplier = this.heightMultiplier ?? 1.0;
+    const heightSmoothing = this.heightSmoothing ?? 0.0;
+
+    const wrapS = this.heightmapTexture.wrapS;
+    const wrapT = this.heightmapTexture.wrapT;
+
+    const applyWrap = (coord, wrapMode, dimension) => {
+      if (wrapMode === THREE.RepeatWrapping) {
+        let wrapped = coord % 1.0;
+        if (wrapped < 0) wrapped += 1.0;
+        return wrapped;
+      }
+
+      if (wrapMode === THREE.MirroredRepeatWrapping) {
+        const floorVal = Math.floor(coord);
+        let wrapped = coord - floorVal;
+        const isOdd = floorVal % 2 !== 0;
+        if (isOdd) {
+          wrapped = 1.0 - wrapped;
+        }
+        if (wrapped < 0) wrapped += 1.0;
+        return wrapped;
+      }
+
+      // Default to clamp-to-edge behaviour
+      const min = 0;
+      const max = dimension > 0 ? (dimension - 1) / dimension : 1.0;
+      return THREE.MathUtils.clamp(coord, min, max);
+    };
+
+    const sampleTexture = (u, v) => {
+      const wrappedU = applyWrap(u, wrapS, width);
+      const wrappedV = applyWrap(v, wrapT, height);
+
+      const px = Math.min(width - 1, Math.max(0, Math.floor(wrappedU * width)));
+      const py = Math.min(height - 1, Math.max(0, Math.floor(wrappedV * height)));
+      const index = py * width + px;
+      return data[index] / 255.0;
+    };
+
+    // Convert world coordinates to texture coordinates (same as shader)
+    const stX = x / worldSize;
+    const stY = y / worldSize;
+
+    let h = 1024.0 * sampleTexture(stX, stY);
+
+    if (detailStrength > 0) {
+      h += detailStrength * 64.0 * sampleTexture(stX * 16.0, stY * 16.0);
+      h += detailStrength * 4.0 * sampleTexture(stX * 256.0, stY * 256.0);
+    }
+
+    h *= heightMultiplier;
+
+    if (heightSmoothing > 0) {
+      h = THREE.MathUtils.lerp(h, h * 0.5, THREE.MathUtils.clamp(heightSmoothing, 0, 1));
+    }
+
+    const finalHeight = (h * h) / 2000.0;
+
+    if (Math.random() < 0.01) {
+      console.log(
+        `[CollisionDetector] x=${x.toFixed(2)}, y=${y.toFixed(2)}, finalHeight=${finalHeight.toFixed(2)}`
+      );
+    }
+
+    return finalHeight;
   }
 
   findTerrainMesh = () => {

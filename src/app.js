@@ -1352,6 +1352,14 @@ class TerrainApp {
         e.preventDefault();
       }
 
+      if (e.code === "KeyG") {
+        // WebGPU toggle temporarily disabled due to import path issues
+        // TODO: Re-enable once WebGPU import paths are resolved
+        console.log('🚧 WebGPU toggle temporarily disabled - import path issues with Vite');
+        console.log('💡 Currently using stable WebGL renderer');
+        e.preventDefault();
+      }
+
       if (e.code === "KeyF") {
         this.fogEnabled = !this.fogEnabled;
         if (this.fogEnabled) {
@@ -1795,6 +1803,7 @@ class TerrainApp {
       this.game.collisionDetector.setDetailStrength(this.detailStrength);
       this.game.collisionDetector.setHeightMultiplier(this.heightGain);
       this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
+
       console.log(
         "🎯 Updated collision detector with procedural heightmap and all terrain parameters"
       );
@@ -2249,6 +2258,76 @@ class TerrainApp {
 
     console.log(`✅ Applied ${effectType} effect to terrain`);
     return;
+  }
+
+  // Toggle between WebGL and WebGPU renderers
+  async toggleRenderer() {
+    const { getCurrentRendererType, switchRenderer, isWebGPU } = await import('./renderer.js');
+
+    const currentType = getCurrentRendererType();
+    const newType = currentType === 'webgl' ? 'webgpu' : 'webgl';
+
+    console.log(`🔄 Attempting to switch from ${currentType.toUpperCase()} to ${newType.toUpperCase()}...`);
+
+    try {
+      await switchRenderer(newType);
+
+      // Show notification to user
+      this.showRendererNotification(newType);
+
+      console.log(`✅ Successfully switched to ${newType.toUpperCase()} renderer!`);
+    } catch (error) {
+      console.warn(`⚠️ Failed to switch to ${newType.toUpperCase()}, staying with ${currentType.toUpperCase()}:`, error);
+      this.showRendererNotification(currentType, true);
+    }
+  }
+
+  // Show a temporary notification about renderer change
+  showRendererNotification(rendererType, isFallback = false) {
+    // Remove existing notification
+    const existingNotification = document.getElementById('renderer-notification');
+    if (existingNotification) {
+      existingNotification.remove();
+    }
+
+    // Create notification
+    const notification = document.createElement('div');
+    notification.id = 'renderer-notification';
+    notification.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 14px;
+      z-index: 10000;
+      border: 2px solid ${rendererType === 'webgpu' ? '#00ff00' : '#4444ff'};
+      text-align: center;
+    `;
+
+    const emoji = rendererType === 'webgpu' ? '🚀' : '🔧';
+    const title = rendererType.toUpperCase();
+    const message = isFallback
+      ? `${emoji} Staying with ${title} renderer`
+      : `${emoji} Switched to ${title} renderer`;
+
+    notification.innerHTML = `
+      <div style="font-weight: bold; margin-bottom: 5px;">${message}</div>
+      <div style="font-size: 12px; opacity: 0.8;">Press G to toggle • M for settings</div>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.remove();
+      }
+    }, 3000);
   }
 }
 

@@ -32,8 +32,16 @@ export class InputManager {
     document.addEventListener('touchcancel', this.onTouchEnd.bind(this), { passive: false })
 
     // Use document body since we don't have a specific game-canvas element
-    document.body.addEventListener('click', () => {
-      document.body.requestPointerLock()
+    document.body.addEventListener('click', (event) => {
+      // Don't lock mouse if any menu is visible or if clicking on menu elements
+      const controlPanel = document.querySelector('.control-panel');
+      const isMenuVisible = controlPanel && controlPanel.style.display !== 'none';
+      const clickedInsideMenu = controlPanel && controlPanel.contains(event.target);
+
+      // Only request pointer lock if no menu is visible and not clicking on menu elements
+      if (!isMenuVisible && !clickedInsideMenu) {
+        document.body.requestPointerLock();
+      }
     })
   }
 
