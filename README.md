@@ -141,8 +141,6 @@ src/
 │   └── audio/            # Audio files
 ├── environment/           # Environment management
 │   └── EnvironmentManager.js # Terrain environments
-├── utils/                 # Utility functions
-│   └── UserPreferences.js # Settings persistence
 ├── app.js                # Main application
 ├── terrain.js            # Terrain generation
 ├── LensFlare.js          # Lens flare effects
