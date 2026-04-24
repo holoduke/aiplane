@@ -9,7 +9,6 @@ import { material } from "./material.js";
 import { scene } from "./scene.js";
 import { EnvironmentManager } from "./environment/EnvironmentManager.js";
 import {
-  noise,
   getNoise,
   setNoiseSmoothing,
   setNoiseHeightGain,
@@ -22,16 +21,13 @@ import {
   MIN_NOISE_WIDTH,
   MAX_NOISE_WIDTH,
 } from "./noise/index.js";
-import { PerlinNoise } from "./noise/PerlinNoise.js";
-import {
-  renderer,
-  setRendererPixelRatio,
-  getRendererPixelRatio,
-} from "./renderer.js";
+import { renderer } from "./renderer.js";
 import { Terrain } from "./terrain.js";
 import { LensFlare } from "./LensFlare.js";
 import obeliskVert from "./assets/shaders/obelisk.vert?raw";
 import obeliskFrag from "./assets/shaders/obelisk.frag?raw";
+import skyscraperVert from "./assets/shaders/skyscraper.vert?raw";
+import skyscraperFrag from "./assets/shaders/skyscraper.frag?raw";
 
 // Default terrain configuration
 const DEFAULT_TERRAIN_INDEX = 2; // Mars terrain
@@ -48,6 +44,10 @@ import { createControlPanel } from "./ui/ControlPanel.js";
 import { createEnvironmentToggle } from "./ui/EnvironmentToggle.js";
 import { Game } from "./game/Game.js";
 import { AudioManager } from "./audio/AudioManager.js";
+import { HeightmapPipeline } from "./world/HeightmapPipeline.js";
+import { ShadowController } from "./rendering/ShadowController.js";
+import { PostProcessingController } from "./rendering/PostProcessingController.js";
+import { SunController } from "./world/SunController.js";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 const SUN_COLOR_COOL = new THREE.Color(0.6, 0.75, 0.98);
@@ -88,78 +88,24 @@ class TerrainApp {
     this.fadeStartScale = 0.9;
     this.fadeEndScale = 1.0;
     this.morphRegion = 0.9;
-    this.bloomEnabled = true;
-    this.bloomStrength = 0.05;
-    this.bloomThreshold = 1.0;
-    this.bloomSoftKnee = 0.76;
-    this.bloomSigma = 4;
-    this.bloomResolution = 356;
-    this.aaEnabled = true;
-    this.aaSubpixelBlending = 1.0;
-    this.aaContrastThreshold = 0.0312;
-    this.aaRelativeThreshold = 0.063;
-    this.sunTime = 16.7;
-    this.sunStrengthBase = 1.2;
-    this.sunDirection = new THREE.Vector3(0, 1, 0);
-    this.currentSunIntensity = 1.0;
-    this.sunWarmth = 0.75;
-    this.sunLightColor = new THREE.Color(1.0, 0.85, 0.65);
-    this.ambientStrength = 0.6;
-    this.ambientColor = new THREE.Color(0.45, 0.42, 0.35);
-    this.ambientDirection = new THREE.Vector3(1, 0, 0);
     this.normalSmoothFactor = 0.65;
     this.specularStrength = 1.0;
-    this.skyTintStrength = 0.15;
-    this.skyTintColor = new THREE.Color(0.62, 0.72, 0.88);
     this.contrastAdjustment = 0.1;
     this.brightnessAdjustment = -0.06;
     this.noiseResolution = getNoiseWidth();
     this.debugLOD = false;
-    this.shadowsEnabled = true;
-    this.shadowCascadeCount = 3;
-    this.shadowResolution = 4192;
-    this.shadowLambda = 0.6;
-    this.shadowMaxDistance = 3600;
-    this.shadowBias = 0.0015;
-    this.shadowStrength = 1.0;
-    this.shadowSoftness = 1.0;
-    this.shadowCascadeOverlap = 0.1;
-    this.shadowCascades = [];
-    this.shadowMatrices = [];
-    this.shadowSplitsVec = new THREE.Vector4(0, 0, 0, 0);
-    this.shadowTempCorners = Array.from(
-      { length: 8 },
-      () => new THREE.Vector3()
-    );
     this.debugAmbientLight = null;
     this.debugSunLight = null;
     this.cameraForward = new THREE.Vector3(0, 1, 0);
     this.viewMatrix = new THREE.Matrix4();
-    this.shadowCascadeEnabled = [true, true, true];
-    this.shadowDebugEnabled = false;
-    this.shadowDebugHelpers = [];
     this.introActive = true;
     this.introElapsed = 0;
     this.introOverlay = null;
     this.introController = null;
-    this.composer = null;
-    this.brightPass = null;
-    this.blurPassH = null;
-    this.blurPassV = null;
-    this.compositePass = null;
-    this.fxaaPass = null;
-    this.brightnessContrastPass = null;
-    this.updateBloomResolutionFn = null;
-    this.applyAASettingsFn = null;
-    this.renderPixelRatio = getRendererPixelRatio();
     this.environmentToggle = null;
     this.game = null;
     this.audioManager = null;
-    this.postProcessingEnabled = true;
-    this.handleComposerResize = null;
     this.lensFlare = null;
-    this.sunWorldPosition = new THREE.Vector3();
-    this.sunDistance = 15000;
     this.terrainLevels = 5;
     this.terrainResolution = 192;
     this.frustumCullingEnabled = false; // Default: disabled for smooth experience
@@ -177,29 +123,111 @@ class TerrainApp {
     this.detailStrength = 0.5; // Default detail strength (50%)
     this.skyKeyframes = SKY_KEYFRAMES;
 
+    this.sunController = new SunController();
     this.environmentManager = new EnvironmentManager(this);
+    this.heightmapPipeline = new HeightmapPipeline(this);
+    this.shadowController = new ShadowController(this);
+    this.postProcessing = new PostProcessingController(this);
     this.applyShaderEnvironment = this.applyShaderEnvironment.bind(this);
-    //this.updateSun = this.updateSun.bind(this);
     this.animate = this.animate.bind(this);
     this.startExperience = this.startExperience.bind(this);
-    this.setBloomResolution = this.setBloomResolution.bind(this);
-    this.setRenderPixelRatio = this.setRenderPixelRatio.bind(this);
-    this.setPostProcessingEnabled = this.setPostProcessingEnabled.bind(this);
-    this.setAntialiasEnabled = this.setAntialiasEnabled.bind(this);
-    this.setAntialiasSubpixel = this.setAntialiasSubpixel.bind(this);
-    this.setAntialiasContrast = this.setAntialiasContrast.bind(this);
-    this.setAntialiasRelative = this.setAntialiasRelative.bind(this);
     this.setNoiseResolution = this.setNoiseResolution.bind(this);
-    this.setupShadows = this.setupShadows.bind(this);
-    this.renderShadowMaps = this.renderShadowMaps.bind(this);
-    this.setShadowEnabled = this.setShadowEnabled.bind(this);
-    this.setShadowStrength = this.setShadowStrength.bind(this);
-    this.setShadowBias = this.setShadowBias.bind(this);
-    this.setShadowMaxDistance = this.setShadowMaxDistance.bind(this);
-    this.setShadowResolution = this.setShadowResolution.bind(this);
-    this.setShadowCascadeEnabled = this.setShadowCascadeEnabled.bind(this);
-    this.setShadowSoftness = this.setShadowSoftness.bind(this);
   }
+
+  // Post-processing state proxies (preserve public API for ControlPanel).
+  // Setters for derived state throw — mutations must go through set*() methods
+  // on the controller so logic (applyAntialiasSettings, etc.) runs consistently.
+  get bloomEnabled() { return this.postProcessing.bloomEnabled; }
+  set bloomEnabled(v) { this.postProcessing.bloomEnabled = Boolean(v); }
+  get bloomStrength() { return this.postProcessing.bloomStrength; }
+  set bloomStrength(v) { this.postProcessing.bloomStrength = v; }
+  get bloomThreshold() { return this.postProcessing.bloomThreshold; }
+  set bloomThreshold(v) { this.postProcessing.bloomThreshold = v; }
+  get bloomSoftKnee() { return this.postProcessing.bloomSoftKnee; }
+  set bloomSoftKnee(v) { this.postProcessing.bloomSoftKnee = v; }
+  get bloomSigma() { return this.postProcessing.bloomSigma; }
+  set bloomSigma(v) { this.postProcessing.bloomSigma = v; }
+  get bloomResolution() { return this.postProcessing.bloomResolution; }
+  set bloomResolution(_) { throw new Error("use setBloomResolution()"); }
+  get aaEnabled() { return this.postProcessing.aaEnabled; }
+  set aaEnabled(_) { throw new Error("use setAntialiasEnabled()"); }
+  get aaSubpixelBlending() { return this.postProcessing.aaSubpixelBlending; }
+  set aaSubpixelBlending(_) { throw new Error("use setAntialiasSubpixel()"); }
+  get aaContrastThreshold() { return this.postProcessing.aaContrastThreshold; }
+  set aaContrastThreshold(_) { throw new Error("use setAntialiasContrast()"); }
+  get aaRelativeThreshold() { return this.postProcessing.aaRelativeThreshold; }
+  set aaRelativeThreshold(_) { throw new Error("use setAntialiasRelative()"); }
+  get postProcessingEnabled() { return this.postProcessing.enabled; }
+  set postProcessingEnabled(_) { throw new Error("use setPostProcessingEnabled()"); }
+  get renderPixelRatio() { return this.postProcessing.renderPixelRatio; }
+  set renderPixelRatio(_) { throw new Error("use setRenderPixelRatio()"); }
+  get composer() { return this.postProcessing.composer; }
+  get brightPass() { return this.postProcessing.brightPass; }
+  get blurPassH() { return this.postProcessing.blurPassH; }
+  get blurPassV() { return this.postProcessing.blurPassV; }
+  get compositePass() { return this.postProcessing.compositePass; }
+  get fxaaPass() { return this.postProcessing.fxaaPass; }
+  get brightnessContrastPass() { return this.postProcessing.brightnessContrastPass; }
+
+  setBloomResolution(v) { this.postProcessing.setBloomResolution(v); }
+  setRenderPixelRatio(v) { this.postProcessing.setRenderPixelRatio(v); }
+  setPostProcessingEnabled(v) { this.postProcessing.setEnabled(v); }
+  setAntialiasEnabled(v) { this.postProcessing.setAntialiasEnabled(v); }
+  setAntialiasSubpixel(v) { this.postProcessing.setAntialiasSubpixel(v); }
+  setAntialiasContrast(v) { this.postProcessing.setAntialiasContrast(v); }
+  setAntialiasRelative(v) { this.postProcessing.setAntialiasRelative(v); }
+  applyBloomSettings() { this.postProcessing.applyBloomSettings(); }
+
+  // Shadow state proxies — mutations must go through set*() methods so that
+  // shadow maps and uniforms stay in sync with the new value.
+  get shadowsEnabled() { return this.shadowController.enabled; }
+  set shadowsEnabled(_) { throw new Error("use setShadowEnabled()"); }
+  get shadowStrength() { return this.shadowController.strength; }
+  set shadowStrength(_) { throw new Error("use setShadowStrength()"); }
+  get shadowSoftness() { return this.shadowController.softness; }
+  set shadowSoftness(_) { throw new Error("use setShadowSoftness()"); }
+  get shadowBias() { return this.shadowController.bias; }
+  set shadowBias(_) { throw new Error("use setShadowBias()"); }
+  get shadowMaxDistance() { return this.shadowController.maxDistance; }
+  set shadowMaxDistance(_) { throw new Error("use setShadowMaxDistance()"); }
+  get shadowResolution() { return this.shadowController.resolution; }
+  set shadowResolution(_) { throw new Error("use setShadowResolution()"); }
+  get shadowCascadeEnabled() { return this.shadowController.cascadeEnabled; }
+  get shadowDebugEnabled() { return this.shadowController.debugEnabled; }
+  set shadowDebugEnabled(_) { throw new Error("use setShadowDebugEnabled()"); }
+  get shadowCascades() { return this.shadowController.cascades; }
+
+  // Sun/lighting state proxies — read+write since EnvironmentManager.updateSun
+  // and ControlPanel sliders write these directly each frame.
+  get sunTime() { return this.sunController.sunTime; }
+  set sunTime(v) { this.sunController.sunTime = v; }
+  get sunStrengthBase() { return this.sunController.sunStrengthBase; }
+  set sunStrengthBase(v) { this.sunController.sunStrengthBase = v; }
+  get sunWarmth() { return this.sunController.sunWarmth; }
+  set sunWarmth(v) { this.sunController.sunWarmth = v; }
+  get sunDirection() { return this.sunController.sunDirection; }
+  get currentSunIntensity() { return this.sunController.currentSunIntensity; }
+  set currentSunIntensity(v) { this.sunController.currentSunIntensity = v; }
+  get sunLightColor() { return this.sunController.sunLightColor; }
+  get ambientStrength() { return this.sunController.ambientStrength; }
+  set ambientStrength(v) { this.sunController.ambientStrength = v; }
+  get ambientColor() { return this.sunController.ambientColor; }
+  get ambientDirection() { return this.sunController.ambientDirection; }
+  get skyTintStrength() { return this.sunController.skyTintStrength; }
+  set skyTintStrength(v) { this.sunController.skyTintStrength = v; }
+  get skyTintColor() { return this.sunController.skyTintColor; }
+  get sunWorldPosition() { return this.sunController.sunWorldPosition; }
+  get sunDistance() { return this.sunController.sunDistance; }
+  set sunDistance(v) { this.sunController.sunDistance = v; }
+
+  setShadowEnabled(v) { this.shadowController.setEnabled(v); }
+  setShadowStrength(v) { this.shadowController.setStrength(v); }
+  setShadowBias(v) { this.shadowController.setBias(v); }
+  setShadowMaxDistance(v) { this.shadowController.setMaxDistance(v); }
+  setShadowResolution(v) { this.shadowController.setResolution(v); }
+  setShadowSoftness(v) { this.shadowController.setSoftness(v); }
+  setShadowCascadeEnabled(i, v) { this.shadowController.setCascadeEnabled(i, v); }
+  setShadowDebugEnabled(v) { this.shadowController.setDebugEnabled(v); }
 
   init() {
     this.setupStats();
@@ -222,11 +250,12 @@ class TerrainApp {
         this.createTerrain();
       });
 
-    this.setupPostProcessing();
-    this.setupShadows();
+    this.postProcessing.setup();
+    this.shadowController.setup();
     this.setupLensFlare();
     this.setupSunMesh();
     this.setupDebugHelpers();
+    this.setupBuildings();
     this.setupSky();
     this.setupIntroOverlay();
 
@@ -397,7 +426,7 @@ class TerrainApp {
     this.terrain.updateSpecularStrength(this.specularStrength);
     this.terrain.updateSkyTint(this.skyTintColor, this.skyTintStrength);
 
-    this.applyShadowUniformsToTerrain();
+    this.shadowController.applyUniformsToTerrain();
     this.terrain.updateCascadeEnabled(this.shadowCascadeEnabled);
     this.terrain.updateViewMatrix(this.viewMatrix);
 
@@ -415,109 +444,15 @@ class TerrainApp {
       console.log(
         "🔗 Connected heightmap texture to collision detector with all settings"
       );
+      // Heightmap just changed → buildings need to be re-grounded (their
+      // initial Z used procedural noise, which may differ from the .bin data).
+      this._placeBuildingsOnFlatTerrain(); this._groundBuildings();
     }
 
     // Apply shader environment after terrain is created
     this.applyShaderEnvironment(this.terrain.activeShaderIndex);
   }
 
-  setupPostProcessing() {
-    const {
-      composer,
-      brightPass,
-      blurPassH,
-      blurPassV,
-      compositePass,
-      fxaaPass,
-      brightnessContrastPass,
-      setBloomResolution,
-      applyAntialiasSettings,
-      handleResize,
-    } = createPostProcessing({
-      renderer,
-      scene: this.scene,
-      camera,
-      bloomStrength: this.bloomStrength,
-      bloomThreshold: this.bloomThreshold,
-      bloomSoftKnee: this.bloomSoftKnee,
-      bloomSigma: this.bloomSigma,
-      bloomResolution: this.bloomResolution,
-      aaEnabled: this.aaEnabled,
-      aaSubpixelBlending: this.aaSubpixelBlending,
-      aaContrastThreshold: this.aaContrastThreshold,
-      aaRelativeThreshold: this.aaRelativeThreshold,
-      brightness: this.brightnessAdjustment,
-      contrast: this.contrastAdjustment,
-    });
-
-    this.composer = composer;
-    this.brightPass = brightPass;
-    this.blurPassH = blurPassH;
-    this.blurPassV = blurPassV;
-    this.compositePass = compositePass;
-    this.fxaaPass = fxaaPass;
-    this.brightnessContrastPass = brightnessContrastPass;
-    this.updateBloomResolutionFn = setBloomResolution;
-    this.applyAASettingsFn = applyAntialiasSettings;
-
-    if (this.brightPass) {
-      this.brightPass.material.uniforms.uThreshold.value = this.bloomThreshold;
-      this.brightPass.material.uniforms.uSoftKnee.value = this.bloomSoftKnee;
-    }
-    if (this.blurPassH) {
-      this.blurPassH.material.uniforms.uSigma.value = this.bloomSigma;
-    }
-    if (this.blurPassV) {
-      this.blurPassV.material.uniforms.uSigma.value = this.bloomSigma;
-    }
-    if (this.compositePass) {
-      this.compositePass.material.uniforms.uBloomStrength.value =
-        this.bloomStrength;
-    }
-    this.setBloomResolution(this.bloomResolution);
-
-    this.handleComposerResize = () => {
-      if (!this.composer) return;
-      handleResize(container.offsetWidth, container.offsetHeight);
-    };
-
-    window.addEventListener("resize", this.handleComposerResize);
-    this.handleComposerResize();
-
-    this.applyBloomSettings();
-    this.applyAntialiasSettings();
-  }
-
-  applyBloomSettings() {
-    if (this.brightPass) {
-      this.brightPass.material.uniforms.uThreshold.value = this.bloomThreshold;
-      this.brightPass.material.uniforms.uSoftKnee.value = this.bloomSoftKnee;
-    }
-    if (this.blurPassH) {
-      this.blurPassH.setSigma(this.bloomSigma);
-    }
-    if (this.blurPassV) {
-      this.blurPassV.setSigma(this.bloomSigma);
-    }
-  }
-
-  setBloomResolution(pixels) {
-    const clamped = THREE.MathUtils.clamp(pixels, 32, 1024);
-    this.bloomResolution = clamped;
-    this.updateBloomResolutionFn?.(clamped);
-  }
-
-  setRenderPixelRatio(value) {
-    const clamped = THREE.MathUtils.clamp(value, 0.5, 3.0);
-    this.renderPixelRatio = clamped;
-    setRendererPixelRatio(clamped);
-    this.handleComposerResize?.();
-  }
-
-  setPostProcessingEnabled(value) {
-    this.postProcessingEnabled = Boolean(value);
-    this.applyAntialiasSettings();
-  }
 
   setNoiseResolution(value) {
     const clamped = THREE.MathUtils.clamp(
@@ -536,27 +471,10 @@ class TerrainApp {
     });
 
     // Clear heightmap data since we have new terrain
-    this.rawHeightmap = null;
-    this.originalHeightmap = null;
-    this.baseHeightmap = null;
-    this.masterHeightmap = null;
-
-    // Reset effect parameters
-    this.effectParameters = {
-      thermal: { iterations: 0, talus: 0.01 },
-      hydraulic: {
-        droplets: 0,
-        inertia: 0.05,
-        capacity: 4,
-        deposition: 0.1,
-        erosion: 0.3,
-      },
-      smooth: { passes: 0 },
-      terracing: { steps: 1 },
-    };
+    this.heightmapPipeline.reset();
 
     // Initialize new master heightmap from the resized terrain
-    this.initializeMasterHeightmap("procedural");
+    this.heightmapPipeline.initializeMasterHeightmap("procedural");
 
     // Apply stored detail strength to the newly resized terrain
     this.terrain?.updateDetailStrength(this.detailStrength);
@@ -568,6 +486,7 @@ class TerrainApp {
       this.game.collisionDetector.setDetailStrength(this.detailStrength);
       this.game.collisionDetector.setHeightMultiplier(this.heightGain);
       this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
+      this._placeBuildingsOnFlatTerrain(); this._groundBuildings();
     }
 
     console.log(
@@ -575,109 +494,6 @@ class TerrainApp {
     );
   }
 
-  setShadowEnabled(value) {
-    const enabled = Boolean(value);
-    if (this.shadowsEnabled === enabled) return;
-    this.shadowsEnabled = enabled;
-    if (enabled) {
-      this.setupShadows();
-      this.renderShadowMaps();
-    } else {
-      this.shadowCascades.forEach((cascade) => {
-        cascade.renderTarget?.dispose?.();
-      });
-      this.shadowCascades = [];
-      this.shadowMatrices = [];
-      this.shadowSplitsVec.set(0, 0, 0, 0);
-      this.terrain?.setShadowsEnabled(false);
-      this.applyShadowUniformsToTerrain();
-    }
-    this.terrain?.updateCascadeEnabled(this.shadowCascadeEnabled);
-  }
-
-  setShadowStrength(value) {
-    this.shadowStrength = THREE.MathUtils.clamp(value, 0.0, 1.0);
-    this.applyShadowUniformsToTerrain();
-    this.renderShadowMaps();
-  }
-
-  setShadowBias(value) {
-    this.shadowBias = THREE.MathUtils.clamp(value, 0.00001, 0.01);
-    this.applyShadowUniformsToTerrain();
-  }
-
-  setShadowMaxDistance(value) {
-    this.shadowMaxDistance = Math.max(50, value);
-    this.calculateShadowCascades();
-    this.renderShadowMaps();
-  }
-
-  setShadowResolution(value) {
-    const clamped = Math.max(128, Math.min(2048, value));
-    const pow2 = Math.pow(2, Math.round(Math.log2(clamped)));
-    if (pow2 === this.shadowResolution) return;
-    this.shadowResolution = pow2;
-    this.setupShadows();
-    this.renderShadowMaps();
-  }
-
-  setShadowSoftness(value) {
-    this.shadowSoftness = THREE.MathUtils.clamp(value, 0.1, 4.0);
-    this.applyShadowUniformsToTerrain();
-  }
-
-  setShadowCascadeEnabled(index, value) {
-    if (index < 0 || index >= this.shadowCascadeEnabled.length) return;
-    this.shadowCascadeEnabled[index] = Boolean(value);
-    this.terrain?.updateCascadeEnabled(this.shadowCascadeEnabled);
-    this.applyShadowUniformsToTerrain();
-    if (this.shadowsEnabled) {
-      this.renderShadowMaps();
-    }
-    if (this.shadowDebugHelpers[index]) {
-      this.shadowDebugHelpers[index].visible =
-        this.shadowDebugEnabled && this.shadowCascadeEnabled[index];
-    }
-  }
-
-  setShadowDebugEnabled(value) {
-    this.shadowDebugEnabled = Boolean(value);
-    this.shadowDebugHelpers.forEach((helper, idx) => {
-      if (helper) {
-        helper.visible =
-          this.shadowDebugEnabled && this.shadowCascadeEnabled[idx];
-      }
-    });
-  }
-
-  setAntialiasEnabled(value) {
-    this.aaEnabled = Boolean(value);
-    this.applyAntialiasSettings();
-  }
-
-  setAntialiasSubpixel(value) {
-    this.aaSubpixelBlending = THREE.MathUtils.clamp(value, 0.0, 1.5);
-    this.applyAntialiasSettings();
-  }
-
-  setAntialiasContrast(value) {
-    this.aaContrastThreshold = THREE.MathUtils.clamp(value, 0.001, 0.2);
-    this.applyAntialiasSettings();
-  }
-
-  setAntialiasRelative(value) {
-    this.aaRelativeThreshold = THREE.MathUtils.clamp(value, 0.001, 0.3);
-    this.applyAntialiasSettings();
-  }
-
-  applyAntialiasSettings() {
-    this.applyAASettingsFn?.({
-      enabled: this.aaEnabled && this.postProcessingEnabled,
-      subpixel: this.aaSubpixelBlending,
-      contrastThreshold: this.aaContrastThreshold,
-      relativeThreshold: this.aaRelativeThreshold,
-    });
-  }
 
   setupLensFlare() {
     this.lensFlare = new LensFlare(this.scene, camera, renderer);
@@ -772,6 +588,14 @@ class TerrainApp {
     this.scene.add(obeliskGroup);
     this.debugObelisk = obeliskGroup;
 
+    // Track obstacle for registration. Game may not exist yet (init order),
+    // so we register lazily in setupGame once collisionDetector is available.
+    this._pendingObstacles = this._pendingObstacles ?? [];
+    this._pendingObstacles.push({
+      mesh: obeliskGroup,
+      userData: { kind: "obelisk" },
+    });
+
     console.log(
       `Obelisk created at position: (${obeliskX}, ${obeliskY}, ${finalZ.toFixed(
         2
@@ -791,367 +615,347 @@ class TerrainApp {
     this.updateDebugLight();
   }
 
+  setupBuildings() {
+    // Default density; ControlPanel's slider rewires this via setBuildingDensity().
+    this.buildingDensity = this.buildingDensity ?? 10;
+    this.maxBuildingDensity = 25;
+    this.buildings = [];
+    this._rebuildBuildingTemplates();
+  }
+
+  /**
+   * Generate `maxBuildingDensity` fresh skyscraper templates. Called at init
+   * and again whenever the density changes (so we always have enough
+   * templates for the max requested count). Palette cycles through a fixed
+   * set so repeated generations look stable.
+   */
+  _rebuildBuildingTemplates() {
+    const WALL_PALETTE = [
+      0x8090a8, 0x758598, 0x8a97a8, 0x6a7688, 0x92969c,
+      0x7a8798, 0x828c9c, 0x6e798c, 0x88909e, 0x7c8698,
+    ];
+    const GLASS_PALETTE = [
+      0x2e4258, 0x283a50, 0x34485e, 0x22344a, 0x3a485a,
+      0x2a3c50, 0x2e4056, 0x263850, 0x324356, 0x2c3e54,
+    ];
+    const LIT = 0xffcc66;
+
+    // Stable pseudo-random from a template index + salt.
+    const r = (idx, salt) =>
+      (Math.sin(idx * 97.3 + salt * 13.1) + 1) * 0.5;
+
+    this._unplacedBuildings = [];
+    for (let i = 0; i < this.maxBuildingDensity; i++) {
+      const w = 55 + Math.floor(r(i, 1) * 45);    // 55..99
+      const d = 55 + Math.floor(r(i, 2) * 45);    // 55..99
+      const h = 160 + Math.floor(r(i, 3) * 240);  // 160..399
+      const wall = WALL_PALETTE[i % WALL_PALETTE.length];
+      const glass = GLASS_PALETTE[i % GLASS_PALETTE.length];
+
+      const group = this._createBuilding({
+        x: 0,
+        y: 0,
+        w,
+        d,
+        h,
+        wall,
+        glass,
+        litColor: LIT,
+        seed: i * 17.3,
+      });
+      this._unplacedBuildings.push({ group, template: { w, d, h, wall, glass, litColor: LIT } });
+    }
+    console.log(
+      `🏢 Prepared ${this._unplacedBuildings.length} skyscraper templates`
+    );
+  }
+
+  /**
+   * Set building density (number of skyscrapers, 0..maxBuildingDensity).
+   * Tears down existing buildings, regenerates templates, and re-runs flat
+   * placement on the current heightmap.
+   */
+  setBuildingDensity(count) {
+    const clamped = THREE.MathUtils.clamp(
+      Math.round(count),
+      0,
+      this.maxBuildingDensity
+    );
+    this.buildingDensity = clamped;
+
+    this._disposeBuildings();
+    this._rebuildBuildingTemplates();
+    this._placeBuildingsOnFlatTerrain();
+    console.log(`🏙️ Building density set to ${clamped}`);
+  }
+
+  _disposeBuildings() {
+    if (!this.buildings?.length && !this._unplacedBuildings?.length) return;
+    const cd = this.game?.collisionDetector;
+
+    // Remove placed buildings from the scene and the obstacle index.
+    if (this.buildings?.length) {
+      for (const group of this.buildings) {
+        this.scene.remove(group);
+        group.traverse((obj) => {
+          obj.geometry?.dispose?.();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach((m) => m.dispose?.());
+            } else {
+              obj.material.dispose?.();
+            }
+          }
+        });
+      }
+      this.buildings = [];
+    }
+    if (cd) {
+      const entries = cd.obstacles.obstacles.filter(
+        (o) => o.userData?.kind === "building"
+      );
+      for (const e of entries) cd.obstacles.remove(e);
+    }
+
+    // Templates not yet placed also need disposal.
+    if (this._unplacedBuildings?.length) {
+      for (const { group } of this._unplacedBuildings) {
+        group.traverse((obj) => {
+          obj.geometry?.dispose?.();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach((m) => m.dispose?.());
+            } else {
+              obj.material.dispose?.();
+            }
+          }
+        });
+      }
+      this._unplacedBuildings = [];
+    }
+  }
+
+  /**
+   * Scan a grid of candidate positions, measure terrain flatness at each,
+   * and assign the N flattest spots (spaced apart) to the unplaced building
+   * templates. Runs the first time the real heightmap is available and
+   * becomes a no-op thereafter.
+   *
+   * "Flatness" is the height variation across a 3×3 sample grid inside the
+   * building's footprint — smaller = flatter. Threshold is in world height
+   * units (same scale as sampleHeightFromTexture output).
+   */
+  _placeBuildingsOnFlatTerrain() {
+    if (!this._unplacedBuildings?.length) return;
+    const cd = this.game?.collisionDetector;
+    if (!cd) return;
+    // Zero density → dispose any pre-built templates and skip scanning.
+    if ((this.buildingDensity ?? 0) <= 0) {
+      for (const { group } of this._unplacedBuildings) {
+        group.traverse((obj) => {
+          obj.geometry?.dispose?.();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose?.());
+            else obj.material.dispose?.();
+          }
+        });
+      }
+      this._unplacedBuildings = [];
+      return;
+    }
+
+    const targetCount = Math.min(
+      this.buildingDensity ?? this._unplacedBuildings.length,
+      this._unplacedBuildings.length
+    );
+
+    const searchBounds = { min: -1400, max: 1400 };
+    const gridStep = 80;          // sample every 80 world-units
+    const checkRadius = 90;       // flatness sampled within ±90 units
+    const maxHeightDelta = 28;    // tune: larger = allow slopier sites
+    const minSpacing = 260;       // skyscrapers at least this far apart
+
+    // Scan grid for flat candidates
+    const candidates = [];
+    for (let y = searchBounds.min; y <= searchBounds.max; y += gridStep) {
+      for (let x = searchBounds.min; x <= searchBounds.max; x += gridStep) {
+        const delta = this._measureFlatness(x, y, checkRadius);
+        if (delta <= maxHeightDelta) {
+          candidates.push({ x, y, delta });
+        }
+      }
+    }
+
+    // Flatter first, then pick with spacing constraint.
+    candidates.sort((a, b) => a.delta - b.delta);
+    const selected = [];
+    for (const c of candidates) {
+      const tooClose = selected.some(
+        (s) => Math.hypot(s.x - c.x, s.y - c.y) < minSpacing
+      );
+      if (!tooClose) {
+        selected.push(c);
+        if (selected.length >= targetCount) break;
+      }
+    }
+
+    console.log(
+      `🏙️ Scanned ${((searchBounds.max - searchBounds.min) / gridStep + 1) ** 2} candidate cells → ${candidates.length} flat (Δh ≤ ${maxHeightDelta}) → ${selected.length} placed (target ${targetCount})`
+    );
+
+    // Assign sites to templates and commit them to the scene + obstacle index.
+    for (let i = 0; i < selected.length; i++) {
+      const { group } = this._unplacedBuildings[i];
+      const site = selected[i];
+      const terrainH = cd.sampleHeightFromTexture(site.x, site.y);
+
+      group.rotation.z = Math.sin(site.x * 0.031 + site.y * 0.017) * 0.5;
+      group.position.set(site.x, site.y, terrainH - 12);
+      group.userData.siteX = site.x;
+      group.userData.siteY = site.y;
+
+      this.scene.add(group);
+      this.buildings.push(group);
+      cd.registerObstacle(group, { kind: "building" });
+    }
+
+    // Dispose any leftover templates we didn't place (either fewer flat sites
+    // than density requested, or density is less than the pool).
+    for (let i = selected.length; i < this._unplacedBuildings.length; i++) {
+      const { group } = this._unplacedBuildings[i];
+      group.traverse((obj) => {
+        obj.geometry?.dispose?.();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose?.());
+          else obj.material.dispose?.();
+        }
+      });
+    }
+    this._unplacedBuildings = [];
+  }
+
+  _measureFlatness(x, y, radius) {
+    const cd = this.game.collisionDetector;
+    let minH = Infinity;
+    let maxH = -Infinity;
+    // 3×3 sample grid inside the footprint
+    for (const dy of [-radius, 0, radius]) {
+      for (const dx of [-radius, 0, radius]) {
+        const h = cd.sampleHeightFromTexture(x + dx, y + dy);
+        if (h < minH) minH = h;
+        if (h > maxH) maxH = h;
+      }
+    }
+    return maxH - minH;
+  }
+
+  _createBuilding({ x, y, w, d, h, wall, glass, litColor, seed: seedOverride }) {
+    const group = new THREE.Group();
+
+    // Skyscraper shader: procedural window grid, fresnel sky reflection that
+    // is strong on the glass and subtle on walls, and a per-window "lit"
+    // emission pattern keyed off uSeed. Uniforms are refreshed each frame by
+    // EnvironmentManager.updateSun() so time-of-day colors flow through.
+    const makeSkyscraperMat = (wallHex, glassHex, seed) =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uWallColor: { value: new THREE.Color(wallHex) },
+          uGlassColor: { value: new THREE.Color(glassHex) },
+          uLitWindowColor: { value: new THREE.Color(litColor) },
+          uSunDirection: { value: this.sunDirection.clone() },
+          uSunIntensity: { value: this.currentSunIntensity },
+          uSunColor: { value: this.sunLightColor.clone() },
+          uAmbientStrength: { value: this.ambientStrength },
+          uAmbientColor: { value: this.ambientColor.clone() },
+          uSkyTintColor: { value: this.skyTintColor.clone() },
+          uWindowCell: { value: new THREE.Vector2(11, 15) }, // ~11w × 15h per window
+          uSeed: { value: seed },
+        },
+        vertexShader: skyscraperVert,
+        fragmentShader: skyscraperFrag,
+      });
+
+    // Per-building seed — stable per-instance. When creating templates before
+    // placement we pass an explicit seedOverride; otherwise derive from coords.
+    const seed =
+      seedOverride != null
+        ? seedOverride
+        : (Math.abs(x) * 0.13 + Math.abs(y) * 0.27) % 1000;
+
+    const bodyMat = makeSkyscraperMat(wall, glass, seed);
+    const bodyGeom = new THREE.BoxGeometry(w, d, h);
+    const body = new THREE.Mesh(bodyGeom, bodyMat);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    body.position.z = h / 2;
+    group.add(body);
+
+    // Rooftop crown: slightly inset, darker, shorter — breaks the silhouette
+    // and reads as mechanical/penthouse. No window grid (its local Z axis
+    // dimensions are small, so the seed randomness picks up naturally).
+    const capHeight = 22;
+    const capWall = new THREE.Color(wall).multiplyScalar(0.55).getHex();
+    const capGlass = new THREE.Color(glass).multiplyScalar(0.7).getHex();
+    const capMat = makeSkyscraperMat(capWall, capGlass, seed + 7.7);
+    const capGeom = new THREE.BoxGeometry(w * 0.8, d * 0.8, capHeight);
+    const cap = new THREE.Mesh(capGeom, capMat);
+    cap.castShadow = true;
+    cap.receiveShadow = true;
+    cap.position.z = h + capHeight / 2;
+    group.add(cap);
+
+    // Slim antenna / spire — adds verticality on the tallest towers.
+    if (h > 280) {
+      const spireHeight = 60 + Math.random() * 30;
+      const spireGeom = new THREE.CylinderGeometry(1.2, 2.5, spireHeight, 6);
+      const spireMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+      const spire = new THREE.Mesh(spireGeom, spireMat);
+      spire.rotation.x = Math.PI / 2;
+      spire.position.z = h + capHeight + spireHeight / 2;
+      group.add(spire);
+    }
+
+    // Position + rotation are deferred: when used as a pre-placement template
+    // the caller leaves the group at origin; _placeBuildingsOnFlatTerrain()
+    // fills in siteX/siteY and sets rotation.z once a flat site is chosen.
+    group.userData.baseEmbed = 12;
+    group.userData.height = h;
+
+    return group;
+  }
+
+  /**
+   * Re-sample each building's terrain height from the actual rendered
+   * heightmap texture (via CollisionDetector.sampleHeightFromTexture) so they
+   * sit flush on the real ground — not the procedural-noise approximation.
+   * Also refreshes the obstacle index bounds so collision matches visuals.
+   */
+  _groundBuildings() {
+    if (!this.buildings?.length) return;
+    const cd = this.game?.collisionDetector;
+    if (!cd) return;
+
+    for (const group of this.buildings) {
+      const { siteX, siteY, baseEmbed } = group.userData;
+      const terrainHeight = cd.sampleHeightFromTexture(siteX, siteY);
+      group.position.z = terrainHeight - baseEmbed;
+    }
+
+    // Rebuild the obstacle spatial index so AABBs match new world positions.
+    const obstacles = cd.obstacles;
+    const buildingEntries = obstacles.obstacles.filter(
+      (o) => o.userData?.kind === "building"
+    );
+    for (const entry of buildingEntries) obstacles.remove(entry);
+    for (const group of this.buildings) {
+      cd.registerObstacle(group, { kind: "building" });
+    }
+  }
+
   setupSky() {
     this.environmentManager.setupSky();
   }
 
-  setupShadows() {
-    this.shadowCascades.forEach((cascade) => {
-      cascade.renderTarget?.dispose?.();
-      if (cascade.helper) {
-        cascade.helper.parent?.remove(cascade.helper);
-        cascade.helper.geometry?.dispose?.();
-        cascade.helper.material?.dispose?.();
-      }
-    });
-    this.shadowCascades = [];
-    this.shadowMatrices = [];
-    this.shadowDebugHelpers = [];
-
-    if (!this.shadowsEnabled) {
-      this.terrain?.setShadowsEnabled(false);
-      this.applyShadowUniformsToTerrain();
-      return;
-    }
-
-    for (let i = 0; i < this.shadowCascadeCount; i++) {
-      const renderTarget = new THREE.WebGLRenderTarget(
-        this.shadowResolution,
-        this.shadowResolution
-      );
-      renderTarget.texture.minFilter = THREE.LinearFilter;
-      renderTarget.texture.magFilter = THREE.LinearFilter;
-      renderTarget.texture.generateMipmaps = false;
-      renderTarget.depthTexture = new THREE.DepthTexture(
-        this.shadowResolution,
-        this.shadowResolution
-      );
-      renderTarget.depthTexture.type = THREE.UnsignedInt248Type;
-
-      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2048);
-      const helper = new THREE.CameraHelper(camera);
-      helper.visible = this.shadowDebugEnabled;
-      this.scene.add(helper);
-      this.shadowCascades.push({ camera, renderTarget, helper });
-      this.shadowDebugHelpers.push(helper);
-      this.shadowMatrices.push(new THREE.Matrix4());
-    }
-
-    this.shadowSplitsVec.set(0, 0, 0, this.shadowMaxDistance);
-    this.terrain?.setShadowsEnabled(true);
-    this.applyShadowUniformsToTerrain();
-  }
-
-  applyShadowUniformsToTerrain() {
-    if (!this.terrain) return;
-    const textures = [null, null, null];
-    for (
-      let i = 0;
-      i < Math.min(this.shadowCascades.length, textures.length);
-      i++
-    ) {
-      textures[i] = this.shadowCascades[i].renderTarget.depthTexture;
-    }
-    this.terrain.updateShadowUniforms(
-      this.shadowMatrices,
-      this.shadowSplitsVec,
-      textures,
-      this.shadowBias,
-      this.shadowStrength,
-      this.shadowsEnabled && this.shadowCascades.length > 0,
-      this.shadowCascadeEnabled,
-      this.shadowResolution,
-      this.shadowSoftness
-    );
-    this.terrain.updateCascadeEnabled(this.shadowCascadeEnabled);
-    if (this.viewMatrix) {
-      this.terrain.updateViewMatrix(this.viewMatrix);
-    }
-  }
-
-  calculateShadowCascades() {
-    if (!this.shadowCascades.length || !this.shadowsEnabled) return;
-
-    const shadowCamera = camera;
-    const near = shadowCamera.near;
-    const far = Math.min(this.shadowMaxDistance, shadowCamera.far);
-    const lambda = this.shadowLambda;
-    const cascadeCount = this.shadowCascades.length;
-
-    const splits = [];
-    for (let i = 0; i < cascadeCount; i++) {
-      const p = (i + 1) / cascadeCount;
-      const log = near * Math.pow(far / near, p);
-      const uniform = near + (far - near) * p;
-      const splitDist = THREE.MathUtils.lerp(uniform, log, lambda);
-      splits.push(splitDist);
-    }
-
-    const adjustedSplits = [];
-
-    let previousSplit = near;
-    let previousRawSplit = near;
-    for (let i = 0; i < cascadeCount; i++) {
-      const currentSplit = splits[i];
-      if (currentSplit == null) continue;
-
-      const segmentLength = Math.max(currentSplit - previousRawSplit, 0);
-      const overlapAmount = segmentLength * this.shadowCascadeOverlap;
-
-      const cascadeNear = previousSplit;
-      const cascadeFar = Math.min(far, currentSplit + overlapAmount);
-
-      if (cascadeFar > cascadeNear + 1e-3) {
-        this.updateCascadeCamera(i, cascadeNear, cascadeFar, shadowCamera);
-      }
-
-      const adjustedSplit = Math.max(
-        cascadeNear + 1e-3,
-        currentSplit - overlapAmount
-      );
-      adjustedSplits[i] = adjustedSplit;
-
-      previousSplit = adjustedSplit;
-      previousRawSplit = currentSplit;
-    }
-
-    this.shadowSplitsVec.set(
-      adjustedSplits[0] ?? far,
-      adjustedSplits[1] ?? far,
-      adjustedSplits[2] ?? far,
-      far
-    );
-
-    this.applyShadowUniformsToTerrain();
-  }
-
-  updateCascadeCamera(index, nearDist, farDist, perspectiveCamera) {
-    const cascade = this.shadowCascades[index];
-    if (!cascade) return;
-
-    const camDir = new THREE.Vector3();
-    perspectiveCamera.getWorldDirection(camDir);
-    camDir.normalize();
-
-    const up = new THREE.Vector3().copy(perspectiveCamera.up).normalize();
-    const right = new THREE.Vector3().crossVectors(camDir, up).normalize();
-    up.crossVectors(right, camDir).normalize();
-
-    const camPos = new THREE.Vector3().copy(perspectiveCamera.position);
-
-    const tanHalfFov = Math.tan(
-      THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5)
-    );
-    const aspect = perspectiveCamera.aspect;
-
-    const nearCenter = camPos
-      .clone()
-      .add(camDir.clone().multiplyScalar(nearDist));
-    const farCenter = camPos
-      .clone()
-      .add(camDir.clone().multiplyScalar(farDist));
-
-    const nearHeight = tanHalfFov * nearDist;
-    const nearWidth = nearHeight * aspect;
-    const farHeight = tanHalfFov * farDist;
-    const farWidth = farHeight * aspect;
-
-    const corners = this.shadowTempCorners;
-
-    const nearUp = up.clone().multiplyScalar(nearHeight);
-    const nearRight = right.clone().multiplyScalar(nearWidth);
-    const farUp = up.clone().multiplyScalar(farHeight);
-    const farRight = right.clone().multiplyScalar(farWidth);
-
-    corners[0].copy(nearCenter).sub(nearRight).sub(nearUp);
-    corners[1].copy(nearCenter).add(nearRight).sub(nearUp);
-    corners[2].copy(nearCenter).sub(nearRight).add(nearUp);
-    corners[3].copy(nearCenter).add(nearRight).add(nearUp);
-    corners[4].copy(farCenter).sub(farRight).sub(farUp);
-    corners[5].copy(farCenter).add(farRight).sub(farUp);
-    corners[6].copy(farCenter).sub(farRight).add(farUp);
-    corners[7].copy(farCenter).add(farRight).add(farUp);
-
-    const lightDir = this.sunDirection.clone().normalize();
-    const lightForward = lightDir.clone().negate();
-    const worldUp =
-      Math.abs(lightForward.z) > 0.99
-        ? new THREE.Vector3(1, 0, 0)
-        : new THREE.Vector3(0, 0, 1);
-    const lightRight = new THREE.Vector3()
-      .crossVectors(worldUp, lightForward)
-      .normalize();
-    const lightUp = new THREE.Vector3()
-      .crossVectors(lightForward, lightRight)
-      .normalize();
-
-    const minBounds = { x: Infinity, y: Infinity, z: Infinity };
-    const maxBounds = { x: -Infinity, y: -Infinity, z: -Infinity };
-
-    const focusWorld = _tmpFocus.copy(perspectiveCamera.position);
-    const focusX = focusWorld.dot(lightRight);
-    const focusY = focusWorld.dot(lightUp);
-    const focusZ = focusWorld.dot(lightForward);
-
-    const extendBounds = (point) => {
-      const x = point.dot(lightRight);
-      const y = point.dot(lightUp);
-      const z = point.dot(lightForward);
-
-      if (x < minBounds.x) minBounds.x = x;
-      if (y < minBounds.y) minBounds.y = y;
-      if (z < minBounds.z) minBounds.z = z;
-      if (x > maxBounds.x) maxBounds.x = x;
-      if (y > maxBounds.y) maxBounds.y = y;
-      if (z > maxBounds.z) maxBounds.z = z;
-    };
-
-    for (let i = 0; i < 8; i++) {
-      extendBounds(corners[i]);
-    }
-
-    extendBounds(focusWorld);
-    if (this.terrain?.offset) {
-      extendBounds(_tmpOffset.copy(this.terrain.offset));
-    }
-
-    const cascadeCount = this.shadowCascades.length || 1;
-    const cascadeT = cascadeCount > 1 ? index / (cascadeCount - 1) : 0;
-
-    const groundReach = THREE.MathUtils.lerp(
-      400,
-      this.shadowMaxDistance,
-      cascadeT
-    );
-    // Extend bounds downward for ground coverage
-    extendBounds(focusWorld.clone().addScaledVector(WORLD_UP, -groundReach));
-
-    // Extend bounds upward for tall objects (especially important when looking down)
-    const skyReach = THREE.MathUtils.lerp(600, 1200, cascadeT);
-    extendBounds(focusWorld.clone().addScaledVector(WORLD_UP, skyReach));
-    const marginXY = THREE.MathUtils.lerp(18, 60, cascadeT);
-    const marginZ = THREE.MathUtils.lerp(100, 300, cascadeT);
-
-    const boundsCenterX = (minBounds.x + maxBounds.x) * 0.5;
-    const boundsCenterY = (minBounds.y + maxBounds.y) * 0.5;
-
-    let centerX = THREE.MathUtils.lerp(focusX, boundsCenterX, cascadeT);
-    let centerY = THREE.MathUtils.lerp(focusY, boundsCenterY, cascadeT);
-
-    let halfExtentX = Math.max(
-      Math.abs(centerX - minBounds.x),
-      Math.abs(centerX - maxBounds.x)
-    );
-    let halfExtentY = Math.max(
-      Math.abs(centerY - minBounds.y),
-      Math.abs(centerY - maxBounds.y)
-    );
-
-    let halfWidth = Math.max(halfExtentX, halfExtentY) + marginXY;
-    halfWidth = Math.max(halfWidth, 1e-3);
-
-    const minZ = minBounds.z - marginZ;
-    const maxZ = maxBounds.z + marginZ;
-    const depth = Math.max(1.0, maxZ - minZ);
-    const centerZ = (minZ + maxZ) * 0.5;
-    const cameraOffset = depth * 0.5;
-
-    const texelSize = (halfWidth * 2) / this.shadowResolution;
-    if (texelSize > 0) {
-      centerX = Math.round((centerX - focusX) / texelSize) * texelSize + focusX;
-      centerY = Math.round((centerY - focusY) / texelSize) * texelSize + focusY;
-    }
-
-    // Ensure snapping did not shrink coverage
-    halfExtentX = Math.max(
-      Math.abs(centerX - minBounds.x),
-      Math.abs(centerX - maxBounds.x)
-    );
-    halfExtentY = Math.max(
-      Math.abs(centerY - minBounds.y),
-      Math.abs(centerY - maxBounds.y)
-    );
-    halfWidth = Math.max(
-      halfWidth,
-      halfExtentX + marginXY,
-      halfExtentY + marginXY
-    );
-    const halfHeight = halfWidth;
-
-    const centerWorld = focusWorld
-      .clone()
-      .addScaledVector(lightRight, centerX - focusX)
-      .addScaledVector(lightUp, centerY - focusY)
-      .addScaledVector(lightForward, centerZ - focusZ);
-
-    const lightCamera = cascade.camera;
-    const eyeWorld = centerWorld
-      .clone()
-      .sub(lightForward.clone().multiplyScalar(cameraOffset));
-    lightCamera.position.copy(eyeWorld);
-    lightCamera.up.copy(lightUp);
-    lightCamera.lookAt(centerWorld);
-    lightCamera.updateMatrixWorld(true);
-    lightCamera.matrixWorldInverse.copy(lightCamera.matrixWorld).invert();
-
-    lightCamera.left = -halfWidth;
-    lightCamera.right = halfWidth;
-    lightCamera.bottom = -halfHeight;
-    lightCamera.top = halfHeight;
-    lightCamera.near = 0.1;
-    lightCamera.far = depth;
-    lightCamera.updateProjectionMatrix();
-    lightCamera.updateMatrixWorld(true);
-    lightCamera.matrixWorldInverse.copy(lightCamera.matrixWorld).invert();
-
-    this.shadowMatrices[index]
-      .copy(lightCamera.projectionMatrix)
-      .multiply(lightCamera.matrixWorldInverse);
-
-    if (cascade.helper) {
-      cascade.helper.update();
-      cascade.helper.visible =
-        this.shadowDebugEnabled && this.shadowCascadeEnabled[index];
-    }
-  }
-
-  renderShadowMaps() {
-    if (!this.shadowsEnabled || !this.shadowCascades.length || !this.terrain) {
-      return;
-    }
-
-    this.calculateShadowCascades();
-
-    const previousRenderTarget = renderer.getRenderTarget();
-    const previousAutoClear = renderer.autoClear;
-
-    const skyVisible = this.sky?.visible;
-    const atmosphereVisible = this.sky2?.visible;
-    const sunMeshVisible = this.sunMesh?.visible;
-    if (this.sky) this.sky.visible = false;
-    if (this.sky2) this.sky2.visible = false;
-    if (this.sunMesh) this.sunMesh.visible = false;
-
-    this.terrain.useDepthMaterial(true);
-
-    renderer.autoClear = true;
-    for (let i = 0; i < this.shadowCascades.length; i++) {
-      const cascade = this.shadowCascades[i];
-      if (!this.shadowCascadeEnabled[i]) continue;
-      renderer.setRenderTarget(cascade.renderTarget);
-      renderer.clear(true, true, true);
-      renderer.render(this.scene, cascade.camera);
-    }
-
-    this.terrain.useDepthMaterial(false);
-
-    if (this.sky !== undefined) this.sky.visible = skyVisible;
-    if (this.sky2 !== undefined) this.sky2.visible = atmosphereVisible;
-    if (this.sunMesh !== undefined) this.sunMesh.visible = sunMeshVisible;
-
-    renderer.setRenderTarget(previousRenderTarget);
-    renderer.autoClear = previousAutoClear;
-  }
 
   setupIntroOverlay() {
     this.introController = createIntroOverlay({
@@ -1188,8 +992,19 @@ class TerrainApp {
   setupGame() {
     this.game = new Game(this);
 
-    // Make the game globally accessible for Player.js integration
-    window.game = this.game;
+    // Register any static obstacles queued during scene setup. At this point
+    // the collisionDetector exists (created in Game's constructor) so we can
+    // flush the pending list.
+    if (this._pendingObstacles && this.game.collisionDetector) {
+      for (const { mesh, userData } of this._pendingObstacles) {
+        this.game.collisionDetector.registerObstacle(mesh, userData);
+      }
+      const stats = this.game.collisionDetector.obstacles.stats();
+      console.log(
+        `🗼 Registered ${stats.obstacles} static obstacle(s) across ${stats.cells} spatial cells`
+      );
+      this._pendingObstacles = [];
+    }
 
     // Show start screen and hide control panel initially
     this.game.uiManager.showStartScreen();
@@ -1660,34 +1475,10 @@ class TerrainApp {
     }\nSun: ${this.sunTime.toFixed(1)}h`;
 
     if (this.shadowsEnabled && this.shadowCascades.length) {
-      this.renderShadowMaps();
+      this.shadowController.render();
     }
 
-    if (this.composer && this.postProcessingEnabled) {
-      const shouldBloom = this.bloomEnabled && this.bloomStrength > 0.001;
-
-      if (this.compositePass) {
-        this.compositePass.material.uniforms.uBloomStrength.value = shouldBloom
-          ? this.bloomStrength
-          : 0.0;
-      }
-
-      if (this.brightPass) {
-        this.brightPass.enabled = shouldBloom;
-      }
-      if (this.blurPassH) {
-        this.blurPassH.enabled = shouldBloom;
-      }
-      if (this.blurPassV) {
-        this.blurPassV.enabled = shouldBloom;
-      }
-      this.composer.render();
-    } else {
-      if (this.brightPass) this.brightPass.enabled = false;
-      if (this.blurPassH) this.blurPassH.enabled = false;
-      if (this.blurPassV) this.blurPassV.enabled = false;
-      renderer.render(this.scene, camera);
-    }
+    this.postProcessing.render();
 
     this.stats?.end();
   }
@@ -1696,7 +1487,7 @@ class TerrainApp {
     this.heightSmoothStrength = THREE.MathUtils.clamp(strength, 0, 1);
 
     // If we have master heightmap data, update terrain display
-    if (this.masterHeightmap) {
+    if (this.heightmapPipeline.masterHeightmap) {
       this.updateTerrainFromMaster();
     } else {
       // Fallback to shader uniforms for pure procedural terrain
@@ -1713,7 +1504,7 @@ class TerrainApp {
     this.heightGain = THREE.MathUtils.clamp(multiplier, 0, 4);
 
     // If we have master heightmap data, update terrain display
-    if (this.masterHeightmap) {
+    if (this.heightmapPipeline.masterHeightmap) {
       this.updateTerrainFromMaster();
     } else {
       // Fallback to shader uniforms for pure procedural terrain
@@ -1739,77 +1530,22 @@ class TerrainApp {
     // Clear generated heightmap to force procedural generation
     this.generatedHeightTexture = null;
 
-    // Clear stored heightmaps for fresh effects
-    this.originalHeightmap = null; // Legacy
-    this.rawHeightmap = null; // Legacy
-
-    // Centralized heightmap management - single source of truth
-    this.baseHeightmap = null; // Clean reference copy - never modified
-    this.masterHeightmap = null; // Contains all applied effects
-
-    // Reset effect parameters
-    this.effectParameters = {
-      thermal: { iterations: 0, talus: 0.01 },
-      hydraulic: {
-        droplets: 0,
-        inertia: 0.05,
-        capacity: 4,
-        deposition: 0.1,
-        erosion: 0.3,
-      },
-      smooth: { passes: 0 },
-      terracing: { steps: 1 },
-    };
-    this.baseHeightmapType = null; // Track the source: 'procedural', 'generated', or 'custom'
-    this.heightmapWidth = null;
-    this.heightmapHeight = null;
-
-    // Effect parameters for reference-based rebuilding
-    this.effectParameters = {
-      thermal: { iterations: 0, talus: 0.01 },
-      hydraulic: {
-        droplets: 0,
-        inertia: 0.05,
-        capacity: 4,
-        deposition: 0.1,
-        erosion: 0.3,
-      },
-      smooth: { passes: 0 },
-      terracing: { steps: 1 },
-    };
+    // Reset pipeline state for fresh procedural terrain
+    this.heightmapPipeline.reset();
 
     // Resize terrain texture to current noise resolution
     const terrainTexture = getTerrainTexture();
     terrainTexture.resize(this.noiseResolution, this.noiseResolution);
 
-    // Regenerate noise with current settings including height gain
     regenerateNoise({
       heightGain: this.heightGain,
       smoothing: this.heightSmoothStrength,
     });
 
-    // Recreate terrain with procedural noise
     this.createTerrain();
     this.applyShaderEnvironment(this.terrain.activeShaderIndex);
-
-    // Initialize master heightmap from the newly created procedural terrain
-    this.initializeMasterHeightmap("procedural");
-
-    // Update collision detector with the procedural texture
-    const proceduralTexture = getNoise();
-    if (this.game && this.game.collisionDetector) {
-      this.game.collisionDetector.setHeightmapTexture(proceduralTexture);
-      // Sync all terrain parameters with collision detector using stored app values
-      this.game.collisionDetector.setDetailStrength(this.detailStrength);
-      this.game.collisionDetector.setHeightMultiplier(this.heightGain);
-      this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
-
-      console.log(
-        "🎯 Updated collision detector with procedural heightmap and all terrain parameters"
-      );
-    }
-
-    // Apply stored detail strength to the newly created terrain
+    this.heightmapPipeline.initializeMasterHeightmap("procedural");
+    this._syncCollisionDetectorWithProcedural();
     this.terrain?.updateDetailStrength(this.detailStrength);
 
     console.log(
@@ -1818,6 +1554,19 @@ class TerrainApp {
       }) with height gain: ${this.heightGain}x, smoothing: ${Math.round(
         this.heightSmoothStrength * 100
       )}%`
+    );
+  }
+
+  _syncCollisionDetectorWithProcedural() {
+    if (!this.game || !this.game.collisionDetector) return;
+    const proceduralTexture = getNoise();
+    this.game.collisionDetector.setHeightmapTexture(proceduralTexture);
+    this.game.collisionDetector.setDetailStrength(this.detailStrength);
+    this.game.collisionDetector.setHeightMultiplier(this.heightGain);
+    this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
+    this._placeBuildingsOnFlatTerrain(); this._groundBuildings();
+    console.log(
+      "🎯 Updated collision detector with procedural heightmap and all terrain parameters"
     );
   }
 
@@ -1848,306 +1597,11 @@ class TerrainApp {
     }
   }
 
-  // Store original heightmap for terrain effects
-  storeOriginalHeightmap() {
-    if (this.generatedHeightTexture) {
-      console.log(
-        "⚠️ Original heightmap storage only works with procedural terrain."
-      );
-      return;
-    }
-
-    const terrainTexture = getTerrainTexture();
-    if (
-      !terrainTexture ||
-      !terrainTexture.texture ||
-      !terrainTexture.texture.image
-    ) {
-      console.log("⚠️ No procedural terrain texture available");
-      return;
-    }
-
-    const data = terrainTexture.texture.image.data;
-    this.originalHeightmap = new Float32Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      this.originalHeightmap[i] = data[i] / 255.0; // Normalize to 0-1
-    }
-    this.heightmapWidth = terrainTexture.texture.image.width;
-    this.heightmapHeight = terrainTexture.texture.image.height;
-    console.log("📸 Stored original heightmap for terrain effects");
-  }
-
-  storeRawHeightmap() {
-    if (this.generatedHeightTexture) {
-      console.log(
-        "⚠️ Raw heightmap storage only works with procedural terrain."
-      );
-      return;
-    }
-
-    // For now, this method generates raw Perlin noise data without any settings applied
-    // This ensures we always have a clean baseline for terrain effects
-    const width = this.noiseResolution;
-    const height = this.noiseResolution;
-
-    // Generate raw Perlin noise without height multiplier or smoothing
-    const rawData = PerlinNoise.generatePerlinNoise(width, height, 0.01, 6);
-
-    this.rawHeightmap = rawData.slice(); // Store copy
-    this.heightmapWidth = width;
-    this.heightmapHeight = height;
-
-    console.log(
-      "📸 Stored raw heightmap (without settings) for terrain effects"
-    );
-  }
-
-  // Centralized heightmap management - single source of truth
-  initializeMasterHeightmap(type = "procedural") {
-    if (this.generatedHeightTexture) {
-      // Initialize from .bin file
-      console.log(
-        "🎯 Initializing master heightmap from generated texture (.bin file)"
-      );
-      this.baseHeightmapType = "generated";
-      // TODO: Extract data from this.generatedHeightTexture
-      return;
-    }
-
-    // Initialize from procedural noise
-    const terrainTexture = getTerrainTexture();
-    if (
-      !terrainTexture ||
-      !terrainTexture.texture ||
-      !terrainTexture.texture.image
-    ) {
-      console.warn("⚠️ No terrain texture available for master heightmap");
-      return;
-    }
-
-    const data = terrainTexture.texture.image.data;
-    this.heightmapWidth = terrainTexture.texture.image.width;
-    this.heightmapHeight = terrainTexture.texture.image.height;
-
-    // Store normalized heightmap data (0-1 range) as base reference (never modified)
-    this.baseHeightmap = new Float32Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      this.baseHeightmap[i] = data[i] / 255.0; // Normalize to 0-1
-    }
-
-    // Initially master is same as base
-    this.masterHeightmap = this.baseHeightmap.slice();
-
-    this.baseHeightmapType = type;
-    console.log(
-      `📋 Initialized base & master heightmap (${this.heightmapWidth}x${this.heightmapHeight}) from ${type} source`
-    );
-  }
-
-  // Rebuild master heightmap from base + all current effect parameters
-  rebuildMasterHeightmap() {
-    if (!this.baseHeightmap) {
-      console.warn("⚠️ No base heightmap available for rebuilding");
-      return false;
-    }
-
-    const width = this.heightmapWidth;
-    const height = this.heightmapHeight;
-
-    // Start with clean base copy
-    let workingHeightmap = this.baseHeightmap.slice();
-
-    // Apply effects in order based on current parameters
-    const params = this.effectParameters;
-
-    // Apply thermal erosion
-    if (params.thermal.iterations > 0) {
-      console.log(
-        `🔥 Applying thermal erosion (${params.thermal.iterations} iterations)`
-      );
-      workingHeightmap = PerlinNoise.thermalErosion(
-        workingHeightmap,
-        width,
-        height,
-        params.thermal.iterations,
-        params.thermal.talus
-      );
-    }
-
-    // Apply hydraulic erosion
-    if (params.hydraulic.droplets > 0) {
-      console.log(
-        `💧 Applying hydraulic erosion (${params.hydraulic.droplets} droplets)`
-      );
-      workingHeightmap = PerlinNoise.hydraulicErosion(
-        workingHeightmap,
-        width,
-        height,
-        params.hydraulic.droplets,
-        params.hydraulic.inertia,
-        params.hydraulic.capacity,
-        params.hydraulic.deposition,
-        params.hydraulic.erosion
-      );
-    }
-
-    // Apply smoothing
-    if (params.smooth.passes > 0) {
-      console.log(`✨ Applying smoothing (${params.smooth.passes} passes)`);
-      workingHeightmap = PerlinNoise.smoothHeightmap(
-        workingHeightmap,
-        width,
-        height,
-        params.smooth.passes
-      );
-    }
-
-    // Apply terracing
-    if (params.terracing.steps > 1) {
-      console.log(`🪜 Applying terracing (${params.terracing.steps} steps)`);
-      workingHeightmap = PerlinNoise.applyTerracing(
-        workingHeightmap,
-        width,
-        height,
-        params.terracing.steps
-      );
-    }
-
-    // Update master heightmap with final result
-    this.masterHeightmap = workingHeightmap;
-    console.log("✅ Rebuilt master heightmap from base + all effects");
-    return true;
-  }
-
-  // Apply an effect by updating parameters and rebuilding (reference-based)
-  applyHeightmapEffect(effectType, parameters = {}) {
-    if (!this.baseHeightmap) {
-      console.warn("⚠️ No base heightmap available for effect application");
-      return false;
-    }
-
-    // Handle terrain generation cases (replace base heightmap entirely)
-    if (["ridged", "cellular", "billow", "warped"].includes(effectType)) {
-      const width = this.heightmapWidth;
-      const height = this.heightmapHeight;
-      let newHeightmap;
-
-      switch (effectType) {
-        case "ridged":
-          console.log(
-            `🏔️ Generating ridged terrain (replacing base heightmap)...`
-          );
-          newHeightmap = PerlinNoise.generateRidgedTerrain(
-            width,
-            height,
-            parameters.scale || 0.01,
-            parameters.octaves || 6
-          );
-          break;
-        case "cellular":
-          console.log(
-            `🕳️ Generating cellular terrain (replacing base heightmap)...`
-          );
-          newHeightmap = PerlinNoise.generateCellularTerrain(
-            width,
-            height,
-            parameters.scale || 0.02,
-            parameters.invert || false
-          );
-          break;
-        case "billow":
-          console.log(
-            `☁️ Generating billow terrain (replacing base heightmap)...`
-          );
-          newHeightmap = PerlinNoise.generateBillowTerrain(
-            width,
-            height,
-            parameters.scale || 0.01,
-            parameters.octaves || 4
-          );
-          break;
-        case "warped":
-          console.log(
-            `🌊 Generating domain-warped terrain (replacing base heightmap)...`
-          );
-          newHeightmap = PerlinNoise.generateWarpedTerrain(
-            width,
-            height,
-            parameters.scale || 0.01,
-            parameters.warpStrength || 30.0
-          );
-          break;
-      }
-
-      // Replace base heightmap with generated terrain
-      this.baseHeightmap = newHeightmap;
-      // Reset all effect parameters when generating new terrain
-      this.effectParameters = {
-        thermal: { iterations: 0, talus: 0.01 },
-        hydraulic: {
-          droplets: 0,
-          inertia: 0.05,
-          capacity: 4,
-          deposition: 0.1,
-          erosion: 0.3,
-        },
-        smooth: { passes: 0 },
-        terracing: { steps: 1 },
-      };
-      this.baseHeightmapType = effectType;
-    } else {
-      // Handle erosion/effect cases - update parameters and rebuild
-      switch (effectType) {
-        case "thermal":
-          this.effectParameters.thermal.iterations = parameters.iterations || 0;
-          this.effectParameters.thermal.talus = parameters.talus || 0.01;
-          break;
-        case "hydraulic":
-          this.effectParameters.hydraulic.droplets = parameters.droplets || 0;
-          this.effectParameters.hydraulic.inertia = parameters.inertia || 0.05;
-          this.effectParameters.hydraulic.capacity = parameters.capacity || 4;
-          this.effectParameters.hydraulic.deposition =
-            parameters.deposition || 0.1;
-          this.effectParameters.hydraulic.erosion = parameters.erosion || 0.3;
-          break;
-        case "smooth":
-          this.effectParameters.smooth.passes = parameters.passes || 0;
-          break;
-        case "terracing":
-          this.effectParameters.terracing.steps = parameters.steps || 1;
-          break;
-        default:
-          console.warn(`⚠️ Unknown heightmap effect: ${effectType}`);
-          return false;
-      }
-    }
-
-    // Rebuild master heightmap from base + all effects
-    return this.rebuildMasterHeightmap();
-  }
-
-  // Update terrain from master heightmap with current settings
+  // Rebuild the terrain mesh + shaders from the current pipeline heightmap.
+  // Called after the pipeline regenerates the master heightmap via an effect.
   updateTerrainFromMaster() {
-    if (!this.masterHeightmap) {
-      console.warn("⚠️ No master heightmap available");
-      return;
-    }
+    if (!this.heightmapPipeline.updateTerrainFromMaster()) return;
 
-    // Apply current settings (height multiplier, smoothing) to master data for display
-    const displayHeightmap = PerlinNoise.applyTerrainSettings(
-      this.masterHeightmap,
-      this.heightGain,
-      this.heightSmoothStrength
-    );
-
-    // Update terrain texture
-    this.updateTerrainTextureFromHeightmap(
-      displayHeightmap,
-      this.heightmapWidth,
-      this.heightmapHeight
-    );
-
-    // Recreate terrain
     this.createTerrain();
     this.applyShaderEnvironment(this.terrain.activeShaderIndex);
 
@@ -2156,85 +1610,8 @@ class TerrainApp {
     );
   }
 
-  // Helper function to apply current terrain settings using static methods
-  applyTerrainSettings(heightmap, width, height) {
-    console.log(
-      `📏 Applying terrain settings: height gain ${this.heightGain}, smoothing ${this.heightSmoothStrength}`
-    );
-    return PerlinNoise.applyTerrainSettings(
-      heightmap,
-      this.heightGain,
-      this.heightSmoothStrength
-    );
-  }
-
-  // Reapply current terrain settings to raw heightmap and update the texture
-  reapplyTerrainSettings() {
-    if (!this.rawHeightmap || !this.heightmapWidth || !this.heightmapHeight) {
-      console.warn(
-        "⚠️ No raw heightmap data available for settings reapplication"
-      );
-      return;
-    }
-
-    console.log("🔄 Reapplying terrain settings to raw heightmap data...");
-
-    // Apply current settings to raw data
-    const processedHeightmap = this.applyTerrainSettings(
-      this.rawHeightmap,
-      this.heightmapWidth,
-      this.heightmapHeight
-    );
-
-    // Update the terrain texture with processed data
-    this.updateTerrainTextureFromHeightmap(
-      processedHeightmap,
-      this.heightmapWidth,
-      this.heightmapHeight
-    );
-
-    // Update collision detector
-    if (this.game && this.game.collisionDetector) {
-      const terrainTexture = getTerrainTexture();
-      this.game.collisionDetector.setHeightmapTexture(terrainTexture.texture);
-      this.game.collisionDetector.setHeightMultiplier(this.heightGain);
-      this.game.collisionDetector.setHeightSmoothing(this.heightSmoothStrength);
-    }
-  }
-
-  // Update terrain texture from processed heightmap data
-  updateTerrainTextureFromHeightmap(heightmap, width, height) {
-    const terrainTexture = getTerrainTexture();
-    if (!terrainTexture || !terrainTexture.texture) {
-      console.warn("⚠️ No terrain texture available for update");
-      return;
-    }
-
-    // Ensure texture dimensions match
-    if (
-      terrainTexture.texture.image.width !== width ||
-      terrainTexture.texture.image.height !== height
-    ) {
-      terrainTexture.resize(width, height);
-    }
-
-    // Convert heightmap data to texture format (0-255 range)
-    const textureData = terrainTexture.texture.image.data;
-    for (let i = 0; i < heightmap.length; i++) {
-      textureData[i] = Math.round(
-        THREE.MathUtils.clamp(heightmap[i], 0, 1) * 255
-      );
-    }
-
-    // Mark texture as needing update
-    terrainTexture.texture.needsUpdate = true;
-
-    console.log("🖼️ Updated terrain texture from heightmap data");
-  }
-
-  // Apply terrain processing effects using centralized heightmap management
+  // Public entry point used by ControlPanel effect buttons.
   applyTerrainEffect(effectType, parameters = {}) {
-    // Only works with procedural terrain
     if (this.generatedHeightTexture) {
       console.log(
         "⚠️ Terrain effects only work with procedural terrain. Generate terrain first."
@@ -2242,93 +1619,27 @@ class TerrainApp {
       return;
     }
 
-    // Initialize base & master heightmap if not already done
-    if (!this.baseHeightmap) {
-      this.initializeMasterHeightmap("procedural");
+    if (!this.heightmapPipeline.baseHeightmap) {
+      this.heightmapPipeline.initializeMasterHeightmap("procedural");
     }
 
-    // Apply the effect using reference-based rebuilding
-    const success = this.applyHeightmapEffect(effectType, parameters);
-    if (!success) {
-      return;
-    }
+    const success = this.heightmapPipeline.applyHeightmapEffect(
+      effectType,
+      parameters
+    );
+    if (!success) return;
 
-    // Update terrain display from master heightmap
     this.updateTerrainFromMaster();
 
     console.log(`✅ Applied ${effectType} effect to terrain`);
-    return;
   }
 
-  // Toggle between WebGL and WebGPU renderers
-  async toggleRenderer() {
-    const { getCurrentRendererType, switchRenderer, isWebGPU } = await import('./renderer.js');
-
-    const currentType = getCurrentRendererType();
-    const newType = currentType === 'webgl' ? 'webgpu' : 'webgl';
-
-    console.log(`🔄 Attempting to switch from ${currentType.toUpperCase()} to ${newType.toUpperCase()}...`);
-
-    try {
-      await switchRenderer(newType);
-
-      // Show notification to user
-      this.showRendererNotification(newType);
-
-      console.log(`✅ Successfully switched to ${newType.toUpperCase()} renderer!`);
-    } catch (error) {
-      console.warn(`⚠️ Failed to switch to ${newType.toUpperCase()}, staying with ${currentType.toUpperCase()}:`, error);
-      this.showRendererNotification(currentType, true);
-    }
-  }
-
-  // Show a temporary notification about renderer change
-  showRendererNotification(rendererType, isFallback = false) {
-    // Remove existing notification
-    const existingNotification = document.getElementById('renderer-notification');
-    if (existingNotification) {
-      existingNotification.remove();
-    }
-
-    // Create notification
-    const notification = document.createElement('div');
-    notification.id = 'renderer-notification';
-    notification.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 15px 25px;
-      border-radius: 8px;
-      font-family: monospace;
-      font-size: 14px;
-      z-index: 10000;
-      border: 2px solid ${rendererType === 'webgpu' ? '#00ff00' : '#4444ff'};
-      text-align: center;
-    `;
-
-    const emoji = rendererType === 'webgpu' ? '🚀' : '🔧';
-    const title = rendererType.toUpperCase();
-    const message = isFallback
-      ? `${emoji} Staying with ${title} renderer`
-      : `${emoji} Switched to ${title} renderer`;
-
-    notification.innerHTML = `
-      <div style="font-weight: bold; margin-bottom: 5px;">${message}</div>
-      <div style="font-size: 12px; opacity: 0.8;">Press G to toggle • M for settings</div>
-    `;
-
-    document.body.appendChild(notification);
-
-    // Auto-remove after 3 seconds
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.remove();
-      }
-    }, 3000);
-  }
 }
 
 export const app = new TerrainApp();
+
+// Dev-only debug handle. Safe to keep: grants the browser console access to
+// the running app for inspection/testing. Not referenced elsewhere in code.
+if (typeof window !== "undefined" && import.meta.env?.DEV) {
+  window.__aiplane = app;
+}
