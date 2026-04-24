@@ -367,29 +367,24 @@ export class EnvironmentManager {
       app.lensFlare.setSunColor(app.sunLightColor);
     }
 
-    // Update obelisk shader uniforms for all meshes in the group
-    if (app.debugObelisk && app.debugObelisk.isGroup) {
-      app.debugObelisk.children.forEach((mesh) => {
-        if (mesh.material && mesh.material.uniforms) {
-          const uniforms = mesh.material.uniforms;
-
-          if (uniforms.uSunDirection) {
-            uniforms.uSunDirection.value.copy(app.sunDirection);
-          }
-          if (uniforms.uSunIntensity) {
-            uniforms.uSunIntensity.value = app.currentSunIntensity;
-          }
-          if (uniforms.uSunColor) {
-            uniforms.uSunColor.value.copy(app.sunLightColor);
-          }
-          if (uniforms.uAmbientStrength) {
-            uniforms.uAmbientStrength.value = app.ambientStrength;
-          }
-          if (uniforms.uAmbientColor) {
-            uniforms.uAmbientColor.value.copy(app.ambientColor);
-          }
-        }
+    // Refresh shader uniforms for any group of lit meshes (obelisk, buildings).
+    // Skyscrapers also read uSkyTintColor for fresnel reflections.
+    const updateGroupUniforms = (group) => {
+      if (!group?.isGroup) return;
+      group.children.forEach((mesh) => {
+        if (!mesh.material || !mesh.material.uniforms) return;
+        const u = mesh.material.uniforms;
+        if (u.uSunDirection) u.uSunDirection.value.copy(app.sunDirection);
+        if (u.uSunIntensity) u.uSunIntensity.value = app.currentSunIntensity;
+        if (u.uSunColor) u.uSunColor.value.copy(app.sunLightColor);
+        if (u.uAmbientStrength) u.uAmbientStrength.value = app.ambientStrength;
+        if (u.uAmbientColor) u.uAmbientColor.value.copy(app.ambientColor);
+        if (u.uSkyTintColor) u.uSkyTintColor.value.copy(app.skyTintColor);
       });
+    };
+    updateGroupUniforms(app.debugObelisk);
+    if (app.buildings) {
+      for (const b of app.buildings) updateGroupUniforms(b);
     }
   }
 }

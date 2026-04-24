@@ -13,7 +13,7 @@ export const MIN_NOISE_WIDTH = 64;
 export const MAX_NOISE_WIDTH = 1024;
 
 // Create global terrain texture instance
-let terrainTexture = new TerrainTexture({
+const terrainTexture = new TerrainTexture({
   width: DEFAULT_NOISE_WIDTH,
   height: DEFAULT_NOISE_WIDTH,
   smoothStrength: DEFAULT_NOISE_SMOOTHING
@@ -21,7 +21,6 @@ let terrainTexture = new TerrainTexture({
 
 // Export the texture for backward compatibility
 export const getNoise = () => terrainTexture.getTexture();
-export const noise = terrainTexture.getTexture();
 
 /**
  * Get current noise texture width
@@ -84,27 +83,10 @@ export function regenerateNoise(options = {}) {
 }
 
 /**
- * Get current noise configuration
- */
-export function getNoiseConfig() {
-  return terrainTexture.getConfig();
-}
-
-/**
  * Get the terrain texture instance (for advanced usage)
  */
 export function getTerrainTexture() {
   return terrainTexture;
-}
-
-/**
- * Replace the global terrain texture (for advanced usage)
- */
-export function setTerrainTexture(newTexture) {
-  if (terrainTexture) {
-    terrainTexture.dispose();
-  }
-  terrainTexture = newTexture;
 }
 
 /**
@@ -117,7 +99,5 @@ function clampToPowerOfTwo(value) {
 
 // Re-export classes for advanced users
 export { PerlinNoise } from "./PerlinNoise.js";
-export { HeightmapGenerator } from "./HeightmapGenerator.js";
-export { TerrainTexture } from "./TerrainTexture.js";
 
 console.log('🌄 Noise system initialized');

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { sampleHeight } from "../noise/index.js";
+import { StaticObstacleIndex } from "../world/StaticObstacleIndex.js";
 
 export class CollisionDetector {
   constructor(scene) {
@@ -7,8 +8,22 @@ export class CollisionDetector {
     this.terrainMesh = null;
     this.raycaster = new THREE.Raycaster();
     this.heightmapTexture = null; // Will store the actual terrain heightmap
+    this._testPoint = new THREE.Vector3();
+    this._segEnd = new THREE.Vector3();
+    this._segHitOut = {};
+
+    // Static-obstacle spatial index (towers, obelisks, ruins). Obstacles never
+    // move, so registering them once at world setup is all we need.
+    this.obstacles = new StaticObstacleIndex();
 
     console.log("🎯 Collision detector initialized");
+  }
+
+  registerObstacle(objectOrBounds, userData) {
+    if (objectOrBounds && objectOrBounds.isObject3D) {
+      return this.obstacles.registerMesh(objectOrBounds, userData);
+    }
+    return this.obstacles.register(objectOrBounds, null, userData);
   }
 
   // Set the heightmap texture to match the terrain
@@ -115,12 +130,6 @@ export class CollisionDetector {
 
     const finalHeight = (h * h) / 2000.0;
 
-    if (Math.random() < 0.01) {
-      console.log(
-        `[CollisionDetector] x=${x.toFixed(2)}, y=${y.toFixed(2)}, finalHeight=${finalHeight.toFixed(2)}`
-      );
-    }
-
     return finalHeight;
   }
 
@@ -154,9 +163,32 @@ export class CollisionDetector {
     const stepSize = 5;
     const backwardSteps = 3;
 
-    const testPoint = new THREE.Vector3();
+    const testPoint = this._testPoint;
 
-    console.log(`[Collision] Checking laser at ${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)}, ${currentPosition.z.toFixed(2)}`);
+    // First: check static obstacles across the whole swept segment (not just
+    // the per-step terrain height). This way a fast-moving laser can't tunnel
+    // through a thin obstacle between steps.
+    this._segEnd
+      .copy(currentPosition)
+      .addScaledVector(direction, totalDistance);
+    const obstacleHit = this.obstacles.querySegment(
+      currentPosition,
+      this._segEnd,
+      this._segHitOut
+    );
+    if (obstacleHit) {
+      const hitPoint = new THREE.Vector3()
+        .copy(currentPosition)
+        .addScaledVector(direction, totalDistance * obstacleHit.t);
+      return {
+        hit: true,
+        kind: "obstacle",
+        obstacle: obstacleHit.obstacle,
+        point: hitPoint,
+        normal: new THREE.Vector3(0, 0, 1), // TODO: derive from which AABB face
+        distance: currentPosition.distanceTo(hitPoint),
+      };
+    }
 
     // Start from a few steps back to check for ghost collisions
     let traveledDistance = -backwardSteps * stepSize;
@@ -166,10 +198,8 @@ export class CollisionDetector {
 
         try {
             const terrainHeight = this.sampleHeightFromTexture(testPoint.x, testPoint.y);
-            console.log(`[Collision] Step: dist=${traveledDistance.toFixed(2)}, testPoint=(${testPoint.x.toFixed(2)}, ${testPoint.y.toFixed(2)}, ${testPoint.z.toFixed(2)}), terrainHeight=${terrainHeight.toFixed(2)}`);
 
             if (testPoint.z <= terrainHeight) {
-                console.log(`[Collision] HIT!`);
                 // Collision detected
                 const hitPoint = testPoint.clone();
                 hitPoint.z = Math.min(testPoint.z, terrainHeight - 2); // Place effect slightly below surface
@@ -178,6 +208,7 @@ export class CollisionDetector {
 
                 return {
                     hit: true,
+                    kind: "terrain",
                     point: hitPoint,
                     normal: normal,
                     distance: currentPosition.distanceTo(hitPoint),
@@ -195,14 +226,13 @@ export class CollisionDetector {
     testPoint.copy(currentPosition).addScaledVector(direction, totalDistance);
     try {
         const terrainHeight = this.sampleHeightFromTexture(testPoint.x, testPoint.y);
-        console.log(`[Collision] Final Step: dist=${totalDistance.toFixed(2)}, testPoint=(${testPoint.x.toFixed(2)}, ${testPoint.y.toFixed(2)}, ${testPoint.z.toFixed(2)}), terrainHeight=${terrainHeight.toFixed(2)}`);
         if (testPoint.z <= terrainHeight) {
-            console.log(`[Collision] HIT!`);
             const hitPoint = testPoint.clone();
             hitPoint.z = Math.min(testPoint.z, terrainHeight - 2); // Place effect slightly below surface
             const normal = this.calculateTerrainNormal(hitPoint.x, hitPoint.y);
             return {
                 hit: true,
+                kind: "terrain",
                 point: hitPoint,
                 normal: normal,
                 distance: currentPosition.distanceTo(hitPoint),
@@ -215,6 +245,14 @@ export class CollisionDetector {
     }
 
     return null; // No collision
+  }
+
+  /**
+   * Point-in-obstacle test for player/bomb position checks. Returns the
+   * obstacle hit, or null if clear.
+   */
+  checkPointObstacle = (position) => {
+    return this.obstacles.queryPoint(position.x, position.y, position.z);
   }
 
   calculateTerrainNormal = (x, y) => {
@@ -303,8 +341,8 @@ export class CollisionDetector {
 
   checkLaserEnemyCollision = (position, radius = 150) => {
     // This would integrate with enemy manager
-    if (window.game && window.game.enemyManager) {
-      return window.game.enemyManager.damageEnemiesInArea(position, radius, 25);
+    if (this.game && this.game.enemyManager) {
+      return this.game.enemyManager.damageEnemiesInArea(position, radius, 25);
     }
     return [];
   }

@@ -5,11 +5,54 @@ import { degToRad } from "three/src/math/MathUtils.js";
 import { sampleHeight } from "../noise/index.js";
 import { EnvironmentEffectsManager } from "./EnvironmentEffectsManager.js";
 
+/**
+ * Tunable flight parameters. All values are initial defaults — fields remain
+ * writable so control-panel sliders continue to work.
+ */
+const FLIGHT_CONSTANTS = {
+  // Speed
+  BASE_SPEED: 300,
+  MAX_SPEED: 200,
+  STEER_SPEED: 900,
+  ACCELERATION: 800,
+
+  // Turning
+  MAX_TURN_RATE: 39.5,
+  TURN_ACCELERATION: 460.0,
+  TURN_DAMPING: 0.3,
+  MAX_TURN_ANGLE: (360 * Math.PI) / 180,
+  MAX_STEER_ANGLE: Math.PI / 3,
+  MAX_BANK_ANGLE: Math.PI / 4,
+  MAX_PITCH_ANGLE: Math.PI / 10,
+
+  // Altitude / descent
+  START_ALTITUDE: 800,
+  TARGET_ALTITUDE: 200,
+  DESCENT_DURATION: 10.0,
+
+  // Weapons
+  LASER_SPEED: 2000,
+  LASER_COOLDOWN_MS: 150,
+  BOMB_SPEED: 12000,
+  BOMB_COOLDOWN_MS: 500,
+
+  // Camera
+  CAMERA_DISTANCE: -20,
+  CAMERA_HEIGHT: 10,
+  CAMERA_ROTATION_FOLLOW_RATE: 10.0,
+  CAMERA_POSITION_FOLLOW_RATE: 3,
+  LOOK_AHEAD_BASE: 600,
+  LOOK_AHEAD_SPEED_FACTOR: 0.3,
+  LOOK_AHEAD_TURN_FACTOR: 20,
+  CAMERA_BANK_TILT_FACTOR: 9.15,
+};
+
 export class Player {
-  constructor(scene, camera, collisionDetector = null) {
+  constructor(scene, camera, collisionDetector = null, game = null) {
     this.scene = scene;
     this.camera = camera;
     this.collisionDetector = collisionDetector;
+    this.game = game;
     this.mesh = null;
     this.velocity = new THREE.Vector3();
     // Find a good spawn position with low terrain
@@ -21,25 +64,25 @@ export class Player {
     );
 
     // Balanced speeds for better control
-    this.baseSpeed = 300; // Cruise/base speed (unchanging target)
-    this.forwardSpeed = this.baseSpeed; // Current speed, starts at base
-    this.maxSpeed = 200; // Maximum speed
-    this.steerSpeed = 900; // Steering responsiveness
-    this.maxSteerAngle = Math.PI / 3; // 60 degrees - higher turn angle
+    this.baseSpeed = FLIGHT_CONSTANTS.BASE_SPEED;
+    this.forwardSpeed = this.baseSpeed;
+    this.maxSpeed = FLIGHT_CONSTANTS.MAX_SPEED;
+    this.steerSpeed = FLIGHT_CONSTANTS.STEER_SPEED;
+    this.maxSteerAngle = FLIGHT_CONSTANTS.MAX_STEER_ANGLE;
 
     // Enhanced flight dynamics with higher turn rates
-    this.acceleration = 800; // How quickly speed changes
-    this.currentTurnRate = 0; // Current turning rate
-    this.maxTurnRate = 39.5; // Much higher turning rate for agile turns
-    this.turnAcceleration = 460.0; // Faster turn acceleration for sharp turns
-    this.turnDamping = 0.3; // Less damping for more responsive feel
-    this.bankAngle = 0; // Current banking angle
-    this.maxBankAngle = Math.PI / 4; // 45 degrees max bank - more dramatic banking
-    this.pitchAngle = 0; // Current pitch angle
-    this.maxPitchAngle = Math.PI / 10; // 36 degrees max pitch - slightly higher
+    this.acceleration = FLIGHT_CONSTANTS.ACCELERATION;
+    this.currentTurnRate = 0;
+    this.maxTurnRate = FLIGHT_CONSTANTS.MAX_TURN_RATE;
+    this.turnAcceleration = FLIGHT_CONSTANTS.TURN_ACCELERATION;
+    this.turnDamping = FLIGHT_CONSTANTS.TURN_DAMPING;
+    this.bankAngle = 0;
+    this.maxBankAngle = FLIGHT_CONSTANTS.MAX_BANK_ANGLE;
+    this.pitchAngle = 0;
+    this.maxPitchAngle = FLIGHT_CONSTANTS.MAX_PITCH_ANGLE;
 
     // Turn angle limits
-    this.maxTurnAngle = (360 * Math.PI) / 180; // 90 degrees max turn angle
+    this.maxTurnAngle = FLIGHT_CONSTANTS.MAX_TURN_ANGLE;
     this.currentTurnAngle = 0; // Track current turn angle from center
     this.worldZRotation = 0; // Track world Z-axis rotation
 
@@ -59,10 +102,10 @@ export class Player {
     this.cameraRotation = new THREE.Quaternion(); // Smooth camera rotation
 
     // Auto-descent configuration
-    this.autoDescentEnabled = true; // Enable/disable auto-descent
-    this.startAltitude = 800; // High starting altitude
-    this.targetAltitude = 200; // Lower target altitude
-    this.descentDuration = 10.0; // 10 seconds to descend
+    this.autoDescentEnabled = true;
+    this.startAltitude = FLIGHT_CONSTANTS.START_ALTITUDE;
+    this.targetAltitude = FLIGHT_CONSTANTS.TARGET_ALTITUDE;
+    this.descentDuration = FLIGHT_CONSTANTS.DESCENT_DURATION;
     this.descentStartTime = null; // When descent begins
     this.hasDescended = false; // Track if descent is complete
     this.initialPosition = null; // Store initial position for descent calculation
@@ -77,21 +120,25 @@ export class Player {
 
     // Laser system
     this.lasers = [];
-    this.laserSpeed = 2000; // Very fast laser speed
+    this.laserSpeed = FLIGHT_CONSTANTS.LASER_SPEED;
     this.lastLaserTime = 0;
-    this.laserCooldown = 150; // 150ms between shots
+    this.laserCooldown = FLIGHT_CONSTANTS.LASER_COOLDOWN_MS;
 
     // Bomb system
     this.bombs = [];
-    this.bombSpeed = 12000; // Slower than lasers
+    this.bombSpeed = FLIGHT_CONSTANTS.BOMB_SPEED;
     this.lastBombTime = 0;
-    this.bombCooldown = 500; // 2 second cooldown between bombs
+    this.bombCooldown = FLIGHT_CONSTANTS.BOMB_COOLDOWN_MS;
     this.explosions = [];
 
     // Reusable vectors for performance (avoid allocating new ones each frame)
     this._tempVector1 = new THREE.Vector3();
     this._tempVector2 = new THREE.Vector3();
     this._tempVector3 = new THREE.Vector3();
+    this._zAxis = new THREE.Vector3(0, 0, 1);
+    this._planeOffset = new THREE.Vector3();
+    this._moveVector = new THREE.Vector3();
+    this.forwardDirection = new THREE.Vector3(0, 1, 0);
 
     // Shared geometries and materials for lasers (reuse instead of creating new ones)
     this._laserCoreGeometry = null;
@@ -304,7 +351,7 @@ export class Player {
     this.updateFlightDynamics(deltaTime);
 
     // Only auto-fly if game has started
-    if (window.game && window.game.gameStarted) {
+    if (this.game && this.game.gameStarted) {
       this.autoFlyForward(deltaTime);
     }
 
@@ -312,6 +359,24 @@ export class Player {
     if (this.mesh) {
       this.position.copy(this.mesh.position);
     }
+
+    // Static-obstacle crash detection (towers, obelisks, etc.). Only checked
+    // while alive and in play — death explosion already hides the mesh so a
+    // second hit shouldn't stack.
+    if (
+      this.mesh &&
+      this.mesh.visible &&
+      this.health > 0 &&
+      this.collisionDetector &&
+      this.game && this.game.gameStarted
+    ) {
+      const obstacle = this.collisionDetector.checkPointObstacle(this.position);
+      if (obstacle) {
+        console.log("💥 Player crashed into obstacle:", obstacle.id);
+        this.takeDamage(this.health); // fatal
+      }
+    }
+
     this.updateAdvancedEffects(deltaTime);
     this.updateLasers(deltaTime);
     this.updateBombs(deltaTime);
@@ -319,7 +384,7 @@ export class Player {
     this.environmentEffects.update(deltaTime);
 
     // Camera update
-    if (window.game && window.game.gameStarted) {
+    if (this.game && this.game.gameStarted) {
       this.updateAdvancedCamera(deltaTime);
     }
   }
@@ -377,8 +442,7 @@ export class Player {
       // Apply rotations in order: world Z first, then banking
       this.mesh.rotation.set(0, this.bankAngle, 0);
 
-      const myAxis = new THREE.Vector3(0, 0, 1);
-      this.mesh.rotateOnWorldAxis(myAxis, this.worldZRotation);
+      this.mesh.rotateOnWorldAxis(this._zAxis, this.worldZRotation);
     } else {
       // No steering input - stabilize
       this.targetYawRate = 0;
@@ -401,12 +465,11 @@ export class Player {
       // Apply rotations in order: banking first, then world Z rotation
       this.mesh.rotation.set(0, this.bankAngle, 0);
 
-      const myAxis = new THREE.Vector3(0, 0, 1);
-      this.mesh.rotateOnWorldAxis(myAxis, this.worldZRotation);
+      this.mesh.rotateOnWorldAxis(this._zAxis, this.worldZRotation);
     }
 
     // Calculate the forward direction vector based on current rotations
-    this.forwardDirection = new THREE.Vector3(0, 1, 0); // Start with world Y (forward)
+    this.forwardDirection.set(0, 1, 0); // Start with world Y (forward)
     this.forwardDirection.applyQuaternion(this.mesh.quaternion); // Apply current rotations
   }
 
@@ -414,16 +477,15 @@ export class Player {
     if (!this.mesh || !this.forwardDirection) return;
 
     // Move in the direction the plane is facing
-    const movement = this.forwardDirection
-      .clone()
+    this._moveVector
+      .copy(this.forwardDirection)
       .multiplyScalar(this.forwardSpeed * deltaTime);
-    this.mesh.position.add(movement);
+    this.mesh.position.add(this._moveVector);
     this.distanceTraveled += this.forwardSpeed * deltaTime;
   }
 
   updateAdvancedEffects(deltaTime) {
     this.updateExhaustGlow(deltaTime);
-    this.updateEngineGlow();
   }
 
   updateExhaustGlow(deltaTime) {
@@ -476,37 +538,16 @@ export class Player {
     });
   }
 
-  updateEngineGlow() {
-    // Dynamic engine glow based on thrust - only for spaceship effects
-    if (!this.mesh) return;
-
-    this.mesh.traverse((child) => {
-      if (child.userData && child.userData.isExhaustGlow) {
-        const intensity = this.thrust;
-        if (child.material) {
-          child.material.opacity = 0.4 + intensity * 0.6;
-
-          // Color shift based on afterburner
-          if (this.afterburner) {
-            child.material.color.setHex(0xff4400);
-          } else {
-            child.material.color.setHex(0x0080ff);
-          }
-        }
-      }
-    });
-  }
-
   updateAdvancedCamera(deltaTime) {
     // Don't update camera if mesh isn't loaded yet
     if (!this.mesh) return;
 
     // Enhanced dynamic camera with speed compensation
-    const cameraDistance = -20; // Very close to the plane
-    const cameraHeight = 10; // Lower height to be more behind than above
+    const cameraDistance = FLIGHT_CONSTANTS.CAMERA_DISTANCE;
+    const cameraHeight = FLIGHT_CONSTANTS.CAMERA_HEIGHT;
 
     // Smooth camera rotation following with lag
-    const rotationFollowRate = 10.0; // Slower = more lag
+    const rotationFollowRate = FLIGHT_CONSTANTS.CAMERA_ROTATION_FOLLOW_RATE;
     const rotationAlpha = 1 - Math.exp(-rotationFollowRate * deltaTime);
     this.cameraRotation.slerp(this.mesh.quaternion, rotationAlpha);
 
@@ -519,15 +560,15 @@ export class Player {
     this._tempVector2.z += cameraHeight; // Z is up in this coordinate system
 
     // Add offset to account for plane model position within group
-    const planeOffset = new THREE.Vector3(0, 0, 5); // Compensate for object.position.set(0, 0, -5)
-    planeOffset.applyQuaternion(this.cameraRotation);
-    this._tempVector2.add(planeOffset);
+    this._planeOffset.set(0, 0, 5); // Compensate for object.position.set(0, 0, -5)
+    this._planeOffset.applyQuaternion(this.cameraRotation);
+    this._tempVector2.add(this._planeOffset);
 
     // Calculate target camera position - reuse temp vector
     this._tempVector1.copy(this.mesh.position).add(this._tempVector2);
 
     // Smooth camera following (time-based alpha)
-    const followRate = 3;
+    const followRate = FLIGHT_CONSTANTS.CAMERA_POSITION_FOLLOW_RATE;
     const followAlpha = 1 - Math.exp(-followRate * deltaTime);
     this.cameraPosition.lerp(this._tempVector1, followAlpha);
     this.camera.position.copy(this.cameraPosition);
@@ -537,14 +578,16 @@ export class Player {
     this._tempVector2.applyQuaternion(this.cameraRotation); // Apply smoothed rotation
 
     const lookAheadDistance =
-      600 + this.forwardSpeed * 0.3 + Math.abs(this.currentTurnRate) * 20;
+      FLIGHT_CONSTANTS.LOOK_AHEAD_BASE +
+      this.forwardSpeed * FLIGHT_CONSTANTS.LOOK_AHEAD_SPEED_FACTOR +
+      Math.abs(this.currentTurnRate) * FLIGHT_CONSTANTS.LOOK_AHEAD_TURN_FACTOR;
     this._tempVector1
       .copy(this.mesh.position)
       .add(this._tempVector2.multiplyScalar(lookAheadDistance));
 
     // Add subtle camera banking - tilt the camera slightly into turns
     if (Math.abs(this.bankAngle) > 0.1) {
-      const bankTilt = this.bankAngle * 9.15; // Subtle camera tilt (15% of plane's bank)
+      const bankTilt = this.bankAngle * FLIGHT_CONSTANTS.CAMERA_BANK_TILT_FACTOR;
       this.camera.rotation.y = THREE.MathUtils.lerp(
         this.camera.rotation.y,
         bankTilt,
@@ -841,7 +884,15 @@ export class Player {
         }
 
         if (collision) {
-          console.log("🎯 Laser hit terrain!", collision.point);
+          if (collision.kind === "obstacle") {
+            console.log(
+              "🎯💥 Laser hit obstacle:",
+              collision.obstacle.id,
+              collision.obstacle.userData?.kind ?? ""
+            );
+          } else {
+            console.log("🎯 Laser hit terrain!", collision.point);
+          }
 
           // Create bright flash effect at collision point
           this.environmentEffects.createTerrainCollisionFlash(
@@ -927,9 +978,9 @@ export class Player {
         }
       }
 
-      // Move normally
-      const velocityStep = laser.velocity.clone().multiplyScalar(deltaTime);
-      laser.position.add(velocityStep);
+      // Move normally — reuse temp vector to avoid per-frame alloc
+      this._tempVector1.copy(laser.velocity).multiplyScalar(deltaTime);
+      laser.position.add(this._tempVector1);
 
       // Update laser and glow positions
       laser.mesh.position.copy(laser.position);
@@ -979,9 +1030,9 @@ export class Player {
         this.createExplosion(bomb.position.clone());
 
         // Damage enemies in explosion area
-        if (window.game && window.game.enemyManager) {
+        if (this.game && this.game.enemyManager) {
           console.log(`💣 Bomb exploding at:`, bomb.position);
-          const bombHits = window.game.enemyManager.damageEnemiesInArea(
+          const bombHits = this.game.enemyManager.damageEnemiesInArea(
             bomb.position,
             300,
             9999
@@ -1023,8 +1074,8 @@ export class Player {
           this.createExplosion(bomb.position.clone());
 
           // Damage enemies in explosion area
-          if (window.game && window.game.enemyManager) {
-            const bombHits = window.game.enemyManager.damageEnemiesInArea(
+          if (this.game && this.game.enemyManager) {
+            const bombHits = this.game.enemyManager.damageEnemiesInArea(
               bomb.position,
               300,
               9999
@@ -1034,8 +1085,9 @@ export class Player {
             );
           }
         } else {
-          // Move bomb forward only if no collision
-          bomb.position.add(bomb.velocity.clone().multiplyScalar(deltaTime));
+          // Move bomb forward only if no collision — reuse temp vector
+          this._tempVector1.copy(bomb.velocity).multiplyScalar(deltaTime);
+          bomb.position.add(this._tempVector1);
         }
 
         // Update bomb and glow positions
@@ -1185,22 +1237,22 @@ export class Player {
 
   getTerrainHeightAtPosition(x = null, z = null) {
     if (
-      window.game &&
-      window.game.terrain &&
-      window.game.terrain.getHeightAtPosition
+      this.game &&
+      this.game.terrain &&
+      this.game.terrain.getHeightAtPosition
     ) {
       const queryX = x !== null ? x : this.mesh.position.x;
       const queryZ = z !== null ? z : this.mesh.position.z;
-      return window.game.terrain.getHeightAtPosition(queryX, queryZ);
+      return this.game.terrain.getHeightAtPosition(queryX, queryZ);
     }
     return 0;
   }
 
   checkBombEnemyCollision(bomb) {
-    if (!window.game || !window.game.enemyManager) return false;
+    if (!this.game || !this.game.enemyManager) return false;
 
     // Check if bomb is close to any enemy
-    for (const enemy of window.game.enemyManager.enemies) {
+    for (const enemy of this.game.enemyManager.enemies) {
       if (!enemy.isDestroyed()) {
         const distance = bomb.position.distanceTo(enemy.getPosition());
         if (distance < 100) {
@@ -1225,8 +1277,8 @@ export class Player {
 
       // Delay game over to show explosion
       setTimeout(() => {
-        if (window.game && window.game.hud) {
-          window.game.hud.showGameOver();
+        if (this.game && this.game.hud) {
+          this.game.hud.showGameOver();
         }
       }, 2000); // 2 second delay
     }
@@ -1340,18 +1392,23 @@ export class Player {
       this.mesh.visible = false;
     }
 
-    // Animate explosion
+    // Animate explosion. rAF handle is stored on `this` so dispose() can cancel
+    // it and clean up meshes if the Player is disposed mid-explosion.
     let explosionTime = 0;
+    this._explosionMeshes = [mainExplosion, ...explosionRings, ...debrisParticles, ...sparkles];
+    const disposeMesh = (mesh) => {
+      this.scene.remove(mesh);
+      mesh.geometry?.dispose();
+      mesh.material?.dispose();
+    };
     const animateExplosion = () => {
       explosionTime += 16; // ~60fps
       const progress = explosionTime / 3000; // 3 second explosion
 
       if (progress > 1) {
-        // Clean up explosion effects
-        this.scene.remove(mainExplosion);
-        explosionRings.forEach((ring) => this.scene.remove(ring));
-        debrisParticles.forEach((debris) => this.scene.remove(debris));
-        sparkles.forEach((sparkle) => this.scene.remove(sparkle));
+        this._explosionMeshes.forEach(disposeMesh);
+        this._explosionMeshes = null;
+        this._explosionRafId = null;
         return;
       }
 
@@ -1387,10 +1444,10 @@ export class Player {
         sparkle.scale.setScalar(1 - progress * 0.5);
       });
 
-      requestAnimationFrame(animateExplosion);
+      this._explosionRafId = requestAnimationFrame(animateExplosion);
     };
 
-    animateExplosion();
+    this._explosionRafId = requestAnimationFrame(animateExplosion);
   }
 
   getStats() {
@@ -1407,6 +1464,20 @@ export class Player {
   }
 
   dispose() {
+    // Cancel any in-flight death-explosion animation and dispose its meshes
+    if (this._explosionRafId != null) {
+      cancelAnimationFrame(this._explosionRafId);
+      this._explosionRafId = null;
+    }
+    if (this._explosionMeshes) {
+      this._explosionMeshes.forEach((mesh) => {
+        this.scene.remove(mesh);
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+      this._explosionMeshes = null;
+    }
+
     // Dispose collision detector
     if (this.collisionDetector) {
       this.collisionDetector.dispose();

@@ -87,6 +87,33 @@ export class AudioManager {
     console.log(`🔊 Stopped: ${name}`);
   }
 
+  // Shared fade implementation — steps volume toward a target, invoking onComplete
+  // when reached. Clears any existing fade on the same audio source.
+  _fadeTo(audioData, targetVolume, duration, onComplete) {
+    const { audio } = audioData;
+    const stepInterval = 50;
+    const steps = Math.max(1, duration / stepInterval);
+    const volumeDelta = (targetVolume - audio.volume) / steps;
+
+    if (audioData.fadeInterval) {
+      clearInterval(audioData.fadeInterval);
+    }
+
+    audioData.fadeInterval = setInterval(() => {
+      const next = audio.volume + volumeDelta;
+      audio.volume = volumeDelta >= 0
+        ? Math.min(targetVolume, next)
+        : Math.max(targetVolume, next);
+
+      if ((volumeDelta >= 0 && audio.volume >= targetVolume) ||
+          (volumeDelta < 0 && audio.volume <= targetVolume)) {
+        clearInterval(audioData.fadeInterval);
+        audioData.fadeInterval = null;
+        onComplete?.();
+      }
+    }, stepInterval);
+  }
+
   // Fade out audio over specified duration
   fadeOut(name, duration = 1000) {
     const audioData = this.audioSources.get(name);
@@ -94,25 +121,11 @@ export class AudioManager {
       return;
     }
 
-    const { audio } = audioData;
-    const startVolume = audio.volume;
-    const fadeStep = startVolume / (duration / 50); // Update every 50ms
-
-    // Clear any existing fade
-    if (audioData.fadeInterval) {
-      clearInterval(audioData.fadeInterval);
-    }
-
-    audioData.fadeInterval = setInterval(() => {
-      audio.volume = Math.max(0, audio.volume - fadeStep);
-
-      if (audio.volume <= 0) {
-        clearInterval(audioData.fadeInterval);
-        audioData.fadeInterval = null;
-        this.stopAudio(name);
-        audio.volume = startVolume; // Reset volume for next play
-      }
-    }, 50);
+    const startVolume = audioData.audio.volume;
+    this._fadeTo(audioData, 0, duration, () => {
+      this.stopAudio(name);
+      audioData.audio.volume = startVolume; // Reset for next play
+    });
 
     console.log(`🔊 Fading out: ${name} over ${duration}ms`);
   }
@@ -125,27 +138,10 @@ export class AudioManager {
       return;
     }
 
-    const { audio } = audioData;
     const targetVolume = audioData.type === 'music' ? this.musicVolume : this.effectsVolume;
-    audio.volume = 0;
-
+    audioData.audio.volume = 0;
     this.playAudio(name);
-
-    const fadeStep = targetVolume / (duration / 50); // Update every 50ms
-
-    // Clear any existing fade
-    if (audioData.fadeInterval) {
-      clearInterval(audioData.fadeInterval);
-    }
-
-    audioData.fadeInterval = setInterval(() => {
-      audio.volume = Math.min(targetVolume, audio.volume + fadeStep);
-
-      if (audio.volume >= targetVolume) {
-        clearInterval(audioData.fadeInterval);
-        audioData.fadeInterval = null;
-      }
-    }, 50);
+    this._fadeTo(audioData, targetVolume, duration);
 
     console.log(`🔊 Fading in: ${name} over ${duration}ms`);
   }

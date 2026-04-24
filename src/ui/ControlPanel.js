@@ -98,10 +98,26 @@ export function createControlPanel({
   const atmosphere = createSection("Atmosphere", { defaultOpen: true });
   const terrain = createSection("Terrain", { defaultOpen: true });
   const terrainGenerator = createSection("Terrain Generator", { defaultOpen: false });
+  const scenery = createSection("Scenery", { defaultOpen: false });
   const render = createSection("Render", { defaultOpen: false });
   const lighting = createSection("Lighting", { defaultOpen: false });
   const shadows = createSection("Shadows", { defaultOpen: false });
   const postFx = createSection("Post FX", { defaultOpen: false });
+
+  // Building density — number of skyscrapers placed on flat terrain.
+  const buildingDensityLabel = scenery.addLabel(
+    `Building density: ${app.buildingDensity ?? 10}`
+  );
+  scenery.addSlider({
+    min: 0,
+    max: app.maxBuildingDensity ?? 25,
+    step: 1,
+    value: app.buildingDensity ?? 10,
+    onInput: (value) => {
+      app.setBuildingDensity(value);
+      buildingDensityLabel.textContent = `Building density: ${app.buildingDensity}`;
+    },
+  });
 
   const fogLabel = atmosphere.addLabel("Fog near: 10%");
   atmosphere.addSlider({
@@ -715,7 +731,7 @@ export function createControlPanel({
   );
   shadows.addSlider({
     min: 256,
-    max: 2048,
+    max: 4096,
     step: 256,
     value: app.shadowResolution,
     onInput: (value, slider) => {

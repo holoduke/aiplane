@@ -21,6 +21,7 @@ export class Game {
 
     // Game systems
     this.collisionDetector = new CollisionDetector(scene);
+    this.collisionDetector.game = this;
     this.uiManager = new UIManager(this);
     this.inputManager = null; // Will be created after player
     this.player = null;
@@ -44,6 +45,34 @@ export class Game {
     this.pauseCameraHeight = 100;
 
     console.log("🎮 Game system initialized");
+  }
+
+  // Menu visibility + toggle live here so InputManager doesn't reach through
+  // to app.controlPanel directly.
+  _controlPanelEl() {
+    return this.app.controlPanel?.panel ?? null;
+  }
+
+  isMenuVisible() {
+    const panel = this._controlPanelEl();
+    return panel ? panel.style.display !== "none" : false;
+  }
+
+  toggleMenu() {
+    const panel = this._controlPanelEl();
+    if (!panel) {
+      console.warn("⚠️ Control panel not found");
+      return;
+    }
+
+    if (panel.style.display !== "none") {
+      panel.style.display = "none";
+      console.log("🍔 Menu hidden with M key");
+    } else {
+      panel.style.display = "block";
+      panel.style.zIndex = "1002";
+      console.log("🍔 Menu shown with M key");
+    }
   }
 
   async startGame(mode = "play") {
@@ -99,12 +128,11 @@ export class Game {
     console.log("🎮 Initializing play mode...");
 
     // Create player
-    this.player = new Player(this.scene, this.camera, this.collisionDetector);
+    this.player = new Player(this.scene, this.camera, this.collisionDetector, this);
 
 
-    // Create input manager with player reference
-    this.inputManager = new InputManager(this.player);
-    this.inputManager.game = this; // Set game reference for pause functionality
+    // Create input manager with player + game references (no back-pointer)
+    this.inputManager = new InputManager(this.player, this);
 
     // Wait for player to load
     let attempts = 0;
